@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Portfolio</h1>
+
+<section class="cards" id="summary"></section>
+<div id="portfolio-review" class="review-wrap"></div>
+
+<div class="toolbar">
+  <button id="refresh-btn">Refresh</button>
+  <span id="status" class="muted"></span>
+</div>
+
+<h2>Performance</h2>
+<div id="performance" class="perf-grid"></div>
+
+<h2>Open positions</h2>
+<div class="table-wrap">
+<table id="open-table">
+  <thead>
+    <tr>
+      <th data-tip="1" data-name="Ticker" data-desc="Stock symbol. Hover the ticker for the company name and description.">Ticker</th>
+      <th data-tip="1" data-name="Shares" data-desc="Number of shares in this paper position.">Shares</th>
+      <th data-tip="1" data-name="Entry" data-desc="Price at which the position was opened.">Entry</th>
+      <th data-tip="1" data-name="Current" data-desc="Latest delayed price.">Current</th>
+      <th data-tip="1" data-name="Return" data-desc="Percent gain or loss since entry.">Return</th>
+      <th data-tip="1" data-name="P&amp;L" data-desc="Unrealized profit or loss in dollars.">P&amp;L</th>
+      <th data-tip="1" data-name="Jev" data-desc="Jev's exit review: recommended action (hold / trim / exit) and its probability that now is a good time to exit.">Jev</th>
+      <th data-tip="1" data-name="Signal" data-desc="Combined rule + Jev signal: HOLD, REVIEW (consider trimming), or SELL. Hover the pill for the reasons.">Signal</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+</div>
+
+<h2>Closed positions</h2>
+<div class="table-wrap">
+<table id="closed-table">
+  <thead>
+    <tr>
+      <th data-tip="1" data-name="Ticker" data-desc="Stock symbol. Hover the ticker for the company name and description.">Ticker</th>
+      <th data-tip="1" data-name="Shares" data-desc="Number of shares in the closed position.">Shares</th>
+      <th data-tip="1" data-name="Entry" data-desc="Price at which the position was opened.">Entry</th>
+      <th data-tip="1" data-name="Exit" data-desc="Price at which the position was closed.">Exit</th>
+      <th data-tip="1" data-name="P&amp;L" data-desc="Realized profit or loss in dollars and percent.">P&amp;L</th>
+      <th data-tip="1" data-name="Closed" data-desc="Date and time the position was closed.">Closed</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+</div>
+
+<script>window.PAGE = "dashboard";</script>
+{% endblock %}

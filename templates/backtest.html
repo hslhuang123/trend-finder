@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Backtest</h1>
+<p class="muted">Replays the momentum strategy over daily history with trading costs.
+Rule-based only — Jev is not replayed. <a href="/help">How to read these results →</a></p>
+
+<form id="bt-form" class="bt-form">
+  <label><span data-tip="1" data-name="Years" data-desc="How many years of past price history to test over.">Years</span><input name="years" type="number" step="0.5" min="0.5" max="15" value="5" /></label>
+  <label><span data-tip="1" data-name="Top K" data-desc="How many stocks to hold at the same time. Each one gets the same amount of money. It only caps how many you hold at once - the plan will still buy and sell many different stocks over the years.">Top K</span><input name="top_k" type="number" min="1" max="10" value="2" /></label>
+  <label><span data-tip="1" data-name="Rebalance (days)" data-desc="How often the app re-ranks the stocks and swaps what you hold, counted in trading days (5 is about once a week).">Rebalance (days)</span><input name="rebalance_days" type="number" min="1" max="60" value="5" /></label>
+  <label><span data-tip="1" data-name="Stop-loss %" data-desc="Sell if the price falls this far below what you paid. A safety net that limits losses.">Stop-loss %</span><input name="stop_loss_pct" type="number" step="0.5" value="10" /></label>
+  <label><span data-tip="1" data-name="Take-profit %" data-desc="Sell once the price rises this far above what you paid.">Take-profit %</span><input name="take_profit_pct" type="number" step="0.5" value="25" /></label>
+  <label><span data-tip="1" data-name="Trailing %" data-desc="Sell if the price falls this far from its highest point since you bought. Leave blank to turn this off.">Trailing %</span><input name="trailing_stop_pct" type="number" step="0.5" placeholder="off" /></label>
+  <label><span data-tip="1" data-name="Commission bps" data-desc="The fee charged on each trade, in basis points (1 bp = 0.01%). 5 bps = 0.05%.">Commission bps</span><input name="commission_bps" type="number" step="0.5" value="5" /></label>
+  <label><span data-tip="1" data-name="Slippage bps" data-desc="A small allowance for getting a slightly worse price than you expected, in basis points (1 bp = 0.01%).">Slippage bps</span><input name="slippage_bps" type="number" step="0.5" value="5" /></label>
+  <button type="submit" id="bt-run">Run backtest</button>
+  <span id="status" class="muted"></span>
+</form>
+
+<div id="bt-compare" class="cards"></div>
+<div id="bt-chart" class="chart-wrap"></div>
+<div id="bt-legend" class="legend"></div>
+<p class="muted chart-caption">
+  Blue = the momentum strategy. Dashed grey = buy-and-hold SPY (same starting cash).
+  Hover either label for details.
+</p>
+
+<h2>Trades</h2>
+<p id="bt-trades-note" class="muted"></p>
+<div class="table-wrap">
+<table id="bt-trades">
+  <thead>
+    <tr>
+      <th data-tip="1" data-name="Date" data-desc="When the trade happened.">Date</th>
+      <th data-tip="1" data-name="Ticker" data-desc="Which stock was bought or sold.">Ticker</th>
+      <th data-tip="1" data-name="Side" data-desc="Buy or sell.">Side</th>
+      <th data-tip="1" data-name="Reason" data-desc="Why this trade happened: a new pick, it dropped off the list, it hit a stop-loss, a take-profit, or a trailing stop.">Reason</th>
+      <th data-tip="1" data-name="Price" data-desc="The price used for the trade (that day's closing price).">Price</th>
+      <th data-tip="1" data-name="Shares" data-desc="How many shares were traded.">Shares</th>
+      <th data-tip="1" data-name="Value" data-desc="How much cash the trade was worth, including fees.">Value</th>
+      <th data-tip="1" data-name="P&amp;L" data-desc="The profit or loss when the stock was sold, after fees. A minus means the trade lost money. Blank for buys.">P&amp;L</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+</div>
+
+<script>window.PAGE = "backtest";</script>
+{% endblock %}

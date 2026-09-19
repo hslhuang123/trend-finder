@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Help</h1>
+<p class="muted">
+  TrendFinder lets you practise investing with pretend money. It checks a list of
+  stocks, ranks them, lets you "buy" and "sell" them, and shows how you would have
+  done. Prices arrive late, and none of this is real advice.
+</p>
+
+<section class="help">
+  <h2>The four tabs</h2>
+  <ul>
+    <li><strong>Portfolio</strong> — your pretend account: your cash, what you own, and whether you're up or down.</li>
+    <li><strong>Screener</strong> — ranks the stocks you're watching and shows which ones look strongest right now.</li>
+    <li><strong>Backtest</strong> — tests your plan against old prices to see if it would have made or lost money.</li>
+    <li><strong>Help</strong> — this page.</li>
+  </ul>
+</section>
+
+<section class="help">
+  <h2>Portfolio</h2>
+  <ul>
+    <li>The big numbers at the top show your total value, your cash, what your stocks are worth, and your profit or loss. Everything is in US dollars.</li>
+    <li><strong>Performance</strong> is a line showing how your account changed over time, plus a few scores. It shows up after a couple of days, once there's enough history to draw.</li>
+    <li>Under it, each stock you own shows what you paid, what it's worth now, and whether you're up or down.</li>
+    <li><strong>Signals</strong> are quick hints next to each holding:
+      <span class="pill hold">HOLD</span> keep it,
+      <span class="pill review">REVIEW</span> maybe sell some,
+      <span class="pill sell">SELL</span> time to get out.
+      Hover over the hint to see why (for example, it dropped past your stop-loss).</li>
+    <li>Canadian stocks are shown in Canadian dollars, but the app converts them to US dollars so your totals add up.</li>
+  </ul>
+</section>
+
+<section class="help">
+  <h2>Screener</h2>
+  <ul>
+    <li><strong>Momentum</strong> is a score for how strongly the price has been rising lately. Higher means it's been climbing more.</li>
+    <li><strong>AI</strong> is the robot's opinion. Hover over the badge to see how strong the trend is, how risky it is, how likely it is to be a good buy, and its overall call — buy now, watch, or avoid. It also gives a combined "Final score" that decides the order of the list.</li>
+    <li><strong>★ and bold</strong> mark the app's own top picks from your list.</li>
+    <li><strong>🔍</strong> marks a couple of extra stocks the app found elsewhere in the market just for that run. They aren't saved to your list, and they change each time.</li>
+    <li>Hover over any column title to see what it means.</li>
+  </ul>
+</section>
+
+<section class="help">
+  <h2>How to read a Backtest</h2>
+  <p>
+    A backtest answers one question: <em>if you had followed your plan in the past,
+    would you have made money or lost money?</em>
+  </p>
+  <p>
+    <strong>Your plan</strong> is just the set of rules you choose at the top of this
+    page: how many stocks to hold, how often to swap them, and when to sell. The
+    backtest looks at old prices and follows those rules.
+  </p>
+
+  <h3>What the settings mean</h3>
+  <dl>
+    <dt>Years</dt><dd>How far back to test. Longer covers more market conditions.</dd>
+    <dt>Top K</dt><dd>How many stocks to hold at the same time. Each one gets an equal share of your money. This only caps how many you hold at once — the plan still buys and sells many different stocks over the years.</dd>
+    <dt>Rebalance (days)</dt><dd>How often the app re-ranks the list and swaps what you hold, counted in trading days. 5 is about once a week.</dd>
+    <dt>Stop-loss %</dt><dd>Sell if the price falls this far below what you paid. A safety net that limits losses.</dd>
+    <dt>Take-profit %</dt><dd>Sell once the price rises this far above what you paid.</dd>
+    <dt>Trailing %</dt><dd>Sell if the price falls this far from its highest point since you bought. Leave blank to turn it off.</dd>
+    <dt>Commission bps</dt><dd>The fee charged on each trade, in basis points (1 bp = 0.01%; 5 bps = 0.05%).</dd>
+    <dt>Slippage bps</dt><dd>A small allowance for getting a slightly worse price than you expected, in basis points.</dd>
+  </dl>
+
+  <h3>What is SPY?</h3>
+  <p>
+    SPY is a fund you can buy that tracks the S&amp;P 500 — a basket of the 500 biggest
+    US companies. It is used here to stand in for "the whole US market". If a plan
+    can't beat simply buying SPY and doing nothing, it isn't adding much.
+  </p>
+
+  <h3>Was it a winner or a loser?</h3>
+  <ul>
+    <li><strong>The line</strong> — the <span class="swatch" style="background:#58a6ff"></span> blue line is your plan, and the
+      <span class="swatch" style="background:none;border-top:2px dashed #8b949e;height:0"></span> grey dashed line is what would have happened if you had bought the whole US market (SPY) and done nothing.
+      If the blue line ends higher than it started, you made money. If it ends above the grey line, you did better than just leaving your money alone.</li>
+    <li><strong>The score cards</strong> — a plus in "Total return" or "CAGR" means you made money; a minus means you lost. A Sharpe above 0 is good. Max drawdown shows the worst dip along the way.</li>
+    <li><strong>The trades table</strong> — a minus in the P&amp;L column means that single trade lost money.</li>
+  </ul>
+
+  <h3>The answer depends on the years you pick</h3>
+  <p>
+    There is no single answer to "did it win?". It changes with the time period, and
+    with whether you compare against simply doing nothing. Here's one example:
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Time period</th><th>Your plan</th><th>Doing nothing (SPY)</th><th>Average per year</th><th>Worst dip</th><th>Result</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>1 year</td><td class="neg">−5.8%</td><td>+17.4%</td><td class="neg">−5.8%</td><td>−33%</td><td>Lost money</td></tr>
+        <tr><td>2 years</td><td class="pos">+12.9%</td><td>+39.8%</td><td class="pos">+6.2%</td><td>−33%</td><td>Made money, but less than doing nothing</td></tr>
+        <tr><td>3 years</td><td class="pos">+37.3%</td><td>+77.5%</td><td class="pos">+11.1%</td><td>−40%</td><td>Made money, but less than doing nothing</td></tr>
+        <tr><td>5 years</td><td class="pos">+88.0%</td><td>+82.9%</td><td class="pos">+13.4%</td><td>−52%</td><td>Made money, and beat doing nothing</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="muted">
+    One more thing: a plan like this often loses more trades than it wins, yet still
+    ends up ahead — because the wins are bigger than the losses. So look at the line
+    and the score cards, not just how many trades won.
+  </p>
+
+  <h3>Why the trades table is so long</h3>
+  <p>
+    Each row is one single buy or sell — not a different company. Only the latest
+    200 rows are shown; the real total is on the "Trades" card. Your plan trades
+    often, so the same few companies appear again and again. The "Reason" column
+    says why each trade happened: it was a new pick, it dropped off the list, it hit
+    a stop-loss, it hit a take-profit, or it hit a trailing stop.
+  </p>
+
+  <div class="note">
+    <strong>The same settings can give different numbers.</strong> A backtest gives
+    the same answer for the same old prices. But this app fetches prices live, and
+    they can be refreshed or revised — so two runs can differ. Treat any single run
+    as a rough guide, not a precise result.
+  </div>
+</section>
+
+<section class="help">
+  <h2>What is Jev?</h2>
+  <p>
+    Jev is a robot that makes decisions instead of writing sentences. You show it some
+    facts and ask simple questions, and it answers with a choice plus how sure it is.
+    The app uses it in three ways:
+  </p>
+  <ul>
+    <li>When picking stocks — how strong the trend is, how risky it is, and whether to buy.</li>
+    <li>When you already own a stock — whether to keep it, sell a bit, or sell all.</li>
+    <li>For your whole account — how risky it is overall and whether it's balanced.</li>
+  </ul>
+  <p class="muted">Jev only gives advice. It never buys or sells for you, and its advice isn't tested in the backtest.</p>
+</section>
+
+<section class="help">
+  <h2>What the scores mean</h2>
+  <dl>
+    <dt>Final value</dt><dd>How much your pretend account is worth at the end.</dd>
+    <dt>Total return</dt><dd>How much you made or lost in total, as a percentage.</dd>
+    <dt>CAGR</dt><dd>The average growth per year.</dd>
+    <dt>Volatility</dt><dd>How bumpy the ride was.</dd>
+    <dt>Sharpe</dt><dd>How much you earned for the risk you took. Around 1 or more is good; below 0 means you lost money.</dd>
+    <dt>Sortino</dt><dd>Like Sharpe, but it only counts the bad bumps.</dd>
+    <dt>Max drawdown</dt><dd>The biggest drop from a high point — how bad the worst dip got.</dd>
+    <dt>Win rate</dt><dd>How often your trades made money.</dd>
+  </dl>
+</section>
+
+<section class="help">
+  <h2>Things to know</h2>
+  <ul>
+    <li>Prices arrive late and come from one free source. They can be missing or wrong.</li>
+    <li>The backtest assumes you trade at the day's closing price and pay small fees. It ignores things a real broker handles, like taxes.</li>
+    <li>The app only looks at a small number of stocks, so results can be misleading.</li>
+    <li>This is for learning. It is not financial advice, and past results don't predict the future.</li>
+  </ul>
+</section>
+{% endblock %}

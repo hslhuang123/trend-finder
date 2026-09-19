@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Trending stocks</h1>
+
+<div class="toolbar">
+  <button id="run-btn">Run screener</button>
+  <label class="muted"><input type="checkbox" id="jev-toggle" checked /> Use Jev</label>
+  <span id="status" class="muted"></span>
+</div>
+
+<div class="toolbar">
+  <input id="ticker-input" placeholder="Add ticker (e.g. AAPL or RY.TO)" />
+  <button id="add-ticker-btn">Add to watchlist</button>
+  <span id="watchlist-count" class="muted"></span>
+</div>
+
+<div class="table-wrap">
+<table id="screen-table">
+  <thead>
+    <tr>
+      <th data-tip="1" data-name="#" data-desc="Rank by Final score, best first.">#</th>
+      <th data-tip="1" data-name="Ticker" data-desc="Stock symbol. Hover the ticker itself for the company name and description.">Ticker</th>
+      <th data-tip="1" data-name="Price" data-desc="Latest delayed closing price.">Price</th>
+      <th data-tip="1" data-name="Market cap" data-desc="Market capitalization: total value of the company's shares (latest available). C$ means Canadian dollars.">Market cap</th>
+      <th data-tip="1" data-name="1d %" data-desc="Percent change from the previous close.">1d %</th>
+      <th data-tip="1" data-name="5d %" data-desc="Percent change over the last 5 trading days.">5d %</th>
+      <th data-tip="1" data-name="RSI" data-desc="14-day Relative Strength Index, 0-100. Above 70 is overbought, below 30 is oversold, around 50 is neutral.">RSI</th>
+      <th data-tip="1" data-name="Vol×" data-desc="Volume ratio: 5-day average volume divided by the 20-day average. Above 1 means busier than usual.">Vol×</th>
+      <th data-tip="1" data-name="ATR %" data-desc="Average True Range as a percent of price, a volatility measure. Higher means bigger swings.">ATR %</th>
+      <th data-tip="1" data-name="Momentum" data-desc="The app's technical score from 5-day return, distance above the 20-day average, volume and RSI, minus an ATR penalty. Roughly -1 to +1.">Momentum</th>
+      <th data-tip="1" data-name="AI" data-desc="Jev's analysis. Hover (or tap) a row's AI badge to see Quality, Risk, Buy, Verdict and Final.">AI</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+</div>
+
+<script>window.PAGE = "screener";</script>
+{% endblock %}

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TrendFinder</title>
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">📈 TrendFinder</div>
+    <nav>
+      <a href="/">Portfolio</a>
+      <a href="/screener">Screener</a>
+      <a href="/backtest">Backtest</a>
+      <a href="/help">Help</a>
+      <span id="jev-badge" class="badge">Jev: …</span>
+    </nav>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

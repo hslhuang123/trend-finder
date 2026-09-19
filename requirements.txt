@@ -1,0 +1,7 @@
+flask>=3.0
+yfinance>=0.2.40
+curl_cffi>=0.15
+pandas>=2.2
+numpy>=1.26
+python-dotenv>=1.0
+requests>=2.31
