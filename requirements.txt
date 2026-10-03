@@ -5,3 +5,5 @@ pandas>=2.2
 numpy>=1.26
 python-dotenv>=1.0
 requests>=2.31
+gunicorn>=21.0
+streamlit>=1.32

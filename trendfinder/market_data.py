@@ -10,6 +10,9 @@ import yfinance as yf
 _FX_CACHE: dict[tuple[str, str], tuple[float, float]] = {}
 _FX_TTL_SECONDS = 600.0
 
+_HIST_CACHE: dict[tuple[str, str, str], tuple[float, list[dict]]] = {}
+_HIST_TTL_SECONDS = 300.0
+
 TREND_COLUMNS = [
     "ticker", "price", "change_1d_pct", "change_5d_pct",
     "ma20", "ma50", "above_ma20_pct", "above_ma50_pct",
@@ -142,6 +145,75 @@ def _close_series(symbol: str, period: str = "5d") -> float | None:
         close = close.iloc[:, 0]
     close = close.dropna()
     return float(close.iloc[-1]) if not close.empty else None
+
+
+def _close_series_for(data: pd.DataFrame, ticker: str) -> pd.Series | None:
+    """Extract the Close series for `ticker` from a yfinance download frame.
+
+    yfinance can return either single-level columns or a MultiIndex that is
+    oriented as (ticker, field) [group_by="ticker"] or (field, ticker)
+    [group_by="column"]. Handle all three.
+    """
+    if data is None or data.empty:
+        return None
+    if not isinstance(data.columns, pd.MultiIndex):
+        if "Close" not in data.columns:
+            return None
+        return data["Close"].dropna()
+    # MultiIndex columns.
+    if ticker in data.columns.get_level_values(0):
+        frame = data[ticker]
+    elif ticker in data.columns.get_level_values(1):
+        frame = data.xs(ticker, level=1, axis=1)
+    else:
+        return None
+    if isinstance(frame, pd.Series):
+        return frame.dropna()
+    if "Close" in frame.columns:
+        return frame["Close"].dropna()
+    return frame.iloc[:, 0].dropna()
+
+
+def fetch_price_history(ticker: str, period: str = "6mo",
+                        interval: str = "1d") -> list[dict]:
+    """Return a list of ``{date, price}`` points for a ticker's price history.
+
+    Results are cached briefly (5 min) so hovering across the table doesn't
+    hammer the free yfinance endpoint.
+    """
+    if not ticker:
+        return []
+    key = (ticker.upper(), period, interval)
+    now = time.time()
+    cached = _HIST_CACHE.get(key)
+    if cached and now - cached[0] < _HIST_TTL_SECONDS:
+        return cached[1]
+
+    try:
+        data = yf.download(
+            ticker, period=period, interval=interval,
+            progress=False, auto_adjust=True, threads=False,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"[chart] download {ticker} failed: {exc}")
+        return []
+    if data is None or data.empty:
+        return []
+
+    close = _close_series_for(data, ticker)
+    if close is None or close.empty:
+        return []
+
+    points: list[dict] = []
+    for idx, val in close.items():
+        label = (
+            idx.strftime("%Y-%m-%d") if interval == "1d"
+            else idx.strftime("%Y-%m-%d %H:%M")
+        )
+        points.append({"date": label, "price": round(float(val), 4)})
+
+    _HIST_CACHE[key] = (now, points)
+    return points
 
 
 def fetch_fx_rate(from_ccy: str, to_ccy: str = "USD") -> float:

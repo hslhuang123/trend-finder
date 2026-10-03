@@ -9,7 +9,7 @@ from datetime import datetime
 
 import pandas as pd
 
-from . import company, config, discover, jev_client, market_data
+from . import company, config, decisions, discover, jev_client, market_data
 
 # Jev's overall verdict shifts the final score the most.
 VERDICT_BONUS = {"buy_now": 0.35, "watch": 0.0, "avoid": -0.45}
@@ -105,12 +105,15 @@ def screen(use_jev: bool = True, top_n: int = 25, jev_top: int = 25,
     # Ask Jev about the strongest candidates, concurrently.
     jev_by_ticker: dict[str, dict] = {}
     if meta["jev_enabled"]:
-        states = [(r["ticker"], build_state(r)) for _, r in df.head(jev_top).iterrows()]
+        states = [(r["ticker"], build_state(r), float(r["momentum_score"]))
+                  for _, r in df.head(jev_top).iterrows()]
         with ThreadPoolExecutor(max_workers=6) as pool_exec:
             answers = list(pool_exec.map(lambda item: jev_client.assess_trend(item[1]), states))
-        for (ticker, _), answer in zip(states, answers):
+        for (ticker, state, momentum), answer in zip(states, answers):
             if answer:
-                jev_by_ticker[ticker] = _extract_entry(answer)
+                extracted = _extract_entry(answer)
+                jev_by_ticker[ticker] = extracted
+                decisions.log_entry(state, answer, extracted, ticker, momentum)
 
     results: list[dict] = []
     for _, row in df.head(top_n).iterrows():
@@ -153,5 +156,29 @@ def screen(use_jev: bool = True, top_n: int = 25, jev_top: int = 25,
         profiles = {}
     for item in results:
         item["company"] = profiles.get(item["ticker"], {})
+
+    # Log the full ranked output so we can later compare Jev re-ranking vs the
+    # rule-only momentum ranking on the same names.
+    try:
+        run_at = meta["generated_at"]
+        mom_rank = {
+            idx: i + 1
+            for i, (idx, _) in enumerate(
+                sorted(enumerate(results), key=lambda x: x[1]["momentum_score"], reverse=True)
+            )
+        }
+        for idx, item in enumerate(results):
+            decisions.log_screen_run(
+                run_at=run_at,
+                ticker=item["ticker"],
+                momentum_score=item["momentum_score"],
+                final_score=item["final_score"],
+                jev_verdict=(item.get("jev") or {}).get("verdict"),
+                jev_enabled=meta["jev_enabled"],
+                rank_momentum=mom_rank.get(idx),
+                rank_final=idx + 1,
+            )
+    except Exception as exc:  # noqa: BLE001
+        print(f"[decisions] screen_runs log failed: {exc}")
 
     return {**meta, "picks": picks, "discovered": discovered, "results": results}

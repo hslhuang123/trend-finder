@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Programmatic UI audit of TrendFinder with Playwright (installed Chrome).
 
-Runs the Portfolio, Screener and Backtest pages on desktop and mobile, checks
+Runs the Screener, Backtest and Help pages on desktop and mobile, checks
 layout/visibility/console errors, exercises the click-through flows, and saves
 screenshots to /tmp/tf_shots.
 """
@@ -43,17 +43,6 @@ def visible_headers(page) -> list[str]:
         "els => els.map(e => [e.textContent.trim(), getComputedStyle(e).display])",
     )
     return [t for t, d in rows if d != "none"]
-
-
-def run_portfolio(page, label: str) -> None:
-    log(f"\n== Portfolio ({label}) ==")
-    page.goto(f"{BASE}/", wait_until="networkidle")
-    page.screenshot(path=str(SHOTS / f"portfolio_{label}.png"), full_page=True)
-    cards = page.locator("#summary .card").count()
-    check("summary cards present", cards >= 5, f"{cards} cards")
-    perf = page.locator("#performance").inner_text().strip()
-    check("performance section rendered", len(perf) > 0, perf[:60].replace("\n", " "))
-    check("no horizontal overflow", not overflow(page))
 
 
 def run_screener(page, label: str) -> None:
@@ -168,7 +157,6 @@ def main() -> None:
         page.on("pageerror", lambda e: errors.append(str(e)))
         page.on("response", lambda r: errors.append(f"HTTP {r.status} {r.url}")
                 if r.status >= 400 and "favicon" not in r.url else None)
-        run_portfolio(page, "desktop")
         run_screener(page, "desktop")
         run_backtest(page, "desktop")
         run_help(page, "desktop")
@@ -182,7 +170,6 @@ def main() -> None:
         merrors: list[str] = []
         page.on("console", lambda m: merrors.append(m.text) if m.type == "error" else None)
         page.on("pageerror", lambda e: merrors.append(str(e)))
-        run_portfolio(page, "mobile")
         run_screener(page, "mobile")
         run_backtest(page, "mobile")
         run_help(page, "mobile")

@@ -1,9 +1,8 @@
 """Jev (TypeSafe System One) client, called through OpenRouter's decisions API.
 
-Jev does three jobs in TrendFinder:
-  * assess_trend     - entry-side judgment on a candidate stock
-  * review_position  - exit-side judgment on an open position
-  * review_portfolio - portfolio-level risk judgment across all holdings
+In TrendFinder, Jev provides the entry-side judgment on a candidate stock:
+  * assess_trend - trend quality, entry risk, momentum sustainability,
+                   buy candidacy, and an overall verdict (buy_now/watch/avoid).
 """
 from __future__ import annotations
 
@@ -90,70 +89,4 @@ def assess_trend(state: dict) -> dict | None:
     })
 
 
-def review_position(state: dict) -> dict | None:
-    """Exit-side: should an open position be held, trimmed, or closed?"""
-    return _ask(state, {
-        "setup_health": {
-            "type": "score",
-            "instructions": "How healthy is the original setup for this position now?",
-            "criteria": [
-                "Broken: the trend reversed or the thesis is invalid",
-                "Weakening: mixed signals, momentum fading",
-                "Intact: trend and thesis still hold",
-            ],
-        },
-        "should_exit": {
-            "type": "noul",
-            "instructions": "Is now a good time to exit this position?",
-            "criteria": {
-                "true": "Momentum has stalled or reversed, or the move is overextended",
-                "false": "The position still has room to run or is consolidating normally",
-            },
-        },
-        "action": {
-            "type": "choice",
-            "instructions": "What action do you recommend for this position?",
-            "criteria": {
-                "hold": "Keep the full position",
-                "trim": "Sell part of the position and keep the rest",
-                "exit": "Close the position now",
-            },
-        },
-        "risk_level": {
-            "type": "score",
-            "instructions": "How much downside risk does holding this position carry right now?",
-            "criteria": ["Low", "Medium", "High"],
-        },
-    })
 
-
-def review_portfolio(state: dict) -> dict | None:
-    """Portfolio-level: overall risk and concentration across all holdings."""
-    return _ask(state, {
-        "overall_risk": {
-            "type": "score",
-            "instructions": "How risky is this portfolio as a whole right now?",
-            "criteria": [
-                "Low: balanced and contained",
-                "Medium: some concentrated or volatile exposure",
-                "High: too much risk for a typical retail account",
-            ],
-        },
-        "diversification": {
-            "type": "noul",
-            "instructions": "Is this portfolio adequately diversified across holdings?",
-            "criteria": {
-                "true": "Exposure is spread across enough uncorrelated names",
-                "false": "Too concentrated in one or two names or themes",
-            },
-        },
-        "advice": {
-            "type": "choice",
-            "instructions": "What is your overall recommendation for this portfolio?",
-            "criteria": {
-                "hold": "Keep the current allocation",
-                "rebalance": "Adjust weights for better balance",
-                "de_risk": "Reduce overall exposure or raise cash",
-            },
-        },
-    })

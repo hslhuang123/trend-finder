@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Evaluate Jev</h1>
+<p class="muted">
+  Measures whether Jev's judgments actually improve on the rule-only momentum
+  ranking. It needs logged decisions with <strong>forward returns</strong> — the
+  first ones appear once ~20 trading days pass after a screener run, so expect it
+  to start nearly empty.
+</p>
+
+<div class="toolbar">
+  <button id="ev-run">Refresh report</button>
+  <span id="status" class="muted"></span>
+</div>
+
+<div id="ev-overview" class="cards"></div>
+
+<h2>Entry verdicts</h2>
+<p class="muted">Mean 20-day forward return after each kind of Jev call. Higher is better.</p>
+<div class="table-wrap">
+<table id="ev-verdicts">
+  <thead>
+    <tr>
+      <th data-tip="1" data-name="Verdict" data-desc="Jev's overall call for the stock.">Verdict</th>
+      <th data-tip="1" data-name="Mean 20d return" data-desc="Average 20-trading-day forward return (%).">Mean 20d return</th>
+      <th data-tip="1" data-name="N" data-desc="How many resolved decisions fall in this bucket.">N</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+</div>
+
+<h2>Buy candidate</h2>
+<p class="muted">Mean 20-day forward return split by Jev's yes/no buy-candidate answer.</p>
+<div class="table-wrap">
+<table id="ev-buy">
+  <thead>
+    <tr>
+      <th data-tip="1" data-name="Buy candidate" data-desc="Jev's buy-candidate flag (true/false).">Buy candidate</th>
+      <th data-tip="1" data-name="Mean 20d return" data-desc="Average 20-trading-day forward return (%).">Mean 20d return</th>
+      <th data-tip="1" data-name="N" data-desc="How many resolved decisions fall in this bucket.">N</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+</div>
+
+<h2>Ranking test</h2>
+<p class="muted">
+  Headline: mean 20-day forward return of the top
+  <span id="ev-k" class="muted">K</span> names ranked by <strong>Final score</strong>
+  (Jev re-ranked) vs by <strong>Momentum</strong> (rule-only). If Jev helps, the
+  Final-score average should be higher.
+</p>
+<div class="cards" id="ev-rank-cards"></div>
+<div class="table-wrap">
+<table id="ev-rank">
+  <thead>
+    <tr>
+      <th data-tip="1" data-name="Run" data-desc="When the screener run happened.">Run</th>
+      <th data-tip="1" data-name="K" data-desc="How many names were compared.">K</th>
+      <th data-tip="1" data-name="Final score avg" data-desc="Average 20-day forward return of the top-K by Final score.">Final avg</th>
+      <th data-tip="1" data-name="Momentum avg" data-desc="Average 20-day forward return of the top-K by Momentum.">Momentum avg</th>
+      <th data-tip="1" data-name="Diff" data-desc="Final avg minus Momentum avg. Positive means Jev's re-rank did better.">Diff</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+</div>
+
+<h2>Score calibration</h2>
+<p class="muted">
+  Correlation between Jev's score answers and the realized 20-day forward return.
+  A negative risk correlation (higher risk → lower returns) and a positive trend
+  correlation are the expected directions.
+</p>
+<div class="table-wrap">
+<table id="ev-calib">
+  <thead>
+    <tr>
+      <th data-tip="1" data-name="Score" data-desc="Jev's score answer.">Score</th>
+      <th data-tip="1" data-name="Correlation" data-desc="Pearson correlation with the 20-day forward return (-1 to +1). Blank if too few samples.">Correlation</th>
+      <th data-tip="1" data-name="N" data-desc="Number of paired observations.">N</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+</div>
+
+<h2>Caveats</h2>
+<ul id="ev-caveats" class="muted"></ul>
+
+<script>window.PAGE = "evaluate";</script>
+{% endblock %}

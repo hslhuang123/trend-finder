@@ -17,22 +17,6 @@ const money = (n) =>
     maximumFractionDigits: 2,
   });
 
-function ccySymbol(ccy) {
-  if (ccy === "CAD") return "C$";
-  if (ccy && ccy !== "USD") return ccy + " ";
-  return "$";
-}
-
-function moneyCcy(n, ccy) {
-  return (
-    ccySymbol(ccy) +
-    Math.abs(Number(n)).toLocaleString(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })
-  );
-}
-
 const pct = (n) => (n > 0 ? "+" : "") + Number(n).toFixed(2) + "%";
 const cls = (n) => (n > 0 ? "pos" : n < 0 ? "neg" : "");
 const num = (v, digits = 2) =>
@@ -61,6 +45,47 @@ function setStatus(msg) {
   if (el) el.textContent = msg;
 }
 
+// ---- Theme (day / night / system) -----------------------------------------
+const THEMES = ["system", "light", "dark"];
+const THEME_ICONS = { system: "🌗", light: "☀️", dark: "🌙" };
+const THEME_LABELS = { system: "System", light: "Day", dark: "Night" };
+
+function getTheme() {
+  return localStorage.getItem("theme") || "system";
+}
+
+function applyTheme(theme) {
+  const root = document.documentElement;
+  if (theme === "system") {
+    root.removeAttribute("data-theme");
+  } else {
+    root.setAttribute("data-theme", theme);
+  }
+  try {
+    localStorage.setItem("theme", theme);
+  } catch {
+    /* ignore (e.g. private mode) */
+  }
+  updateThemeBtn();
+}
+
+function updateThemeBtn() {
+  const btn = $("#theme-btn");
+  if (!btn) return;
+  const theme = getTheme();
+  btn.textContent = THEME_ICONS[theme] || THEME_ICONS.system;
+  btn.title = `Theme: ${THEME_LABELS[theme] || "System"}`;
+}
+
+function initTheme() {
+  applyTheme(getTheme());
+}
+
+function cycleTheme() {
+  const idx = THEMES.indexOf(getTheme());
+  applyTheme(THEMES[(idx + 1) % THEMES.length]);
+}
+
 async function loadConfig() {
   try {
     const cfg = await api("/api/config");
@@ -74,225 +99,16 @@ async function loadConfig() {
   }
 }
 
-function signalPill(p) {
-  const title = (p.reasons || []).join("; ");
-  if (p.signal === "SELL") return `<span class="pill sell" title="${title}">SELL</span>`;
-  if (p.signal === "REVIEW") return `<span class="pill review" title="${title}">REVIEW</span>`;
-  return `<span class="pill hold" title="${title}">HOLD</span>`;
-}
-
-function jevExitCell(p) {
-  const j = p.jev || {};
-  if (!j.action) return "—";
-  const pctTxt = j.should_exit != null ? ` ${Math.round(j.should_exit * 100)}%` : "";
-  return `${j.action.replace("_", " ")}${pctTxt}`;
-}
-
-function renderPortfolioReview(pr) {
-  const el = $("#portfolio-review");
-  if (!el) return;
-  el.replaceChildren();
-  if (!pr) return;
-  const card = document.createElement("div");
-  card.className = "card review";
-  const label = document.createElement("div");
-  label.className = "label";
-  label.textContent = "Jev portfolio review";
-  const body = document.createElement("div");
-  body.className = "review-body";
-  const div = pr.diversification != null ? `${Math.round(pr.diversification * 100)}%` : "—";
-  body.textContent = `Advice: ${pr.advice || "—"} · Overall risk: ${pr.overall_risk ?? "—"}/2 · Diversified: ${div}`;
-  card.append(label, body);
-  el.appendChild(card);
-}
-
 function fmtPctCell(v, digits = 2) {
   if (v === null || v === undefined) return "—";
   return (v > 0 ? "+" : "") + Number(v).toFixed(digits) + "%";
 }
 
-function sparkline(values) {
-  const width = 260, height = 56, pad = 4;
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
-  svg.setAttribute("class", "sparkline");
-  if (!values || values.length < 2) return svg;
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const span = max - min || 1;
-  const step = (width - pad * 2) / (values.length - 1);
-  const points = values
-    .map((v, i) => {
-      const x = pad + i * step;
-      const y = height - pad - ((v - min) / span) * (height - pad * 2);
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(" ");
-  const poly = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-  poly.setAttribute("points", points);
-  poly.setAttribute("fill", "none");
-  poly.setAttribute("stroke", values[values.length - 1] >= values[0] ? "#3fb950" : "#f85149");
-  poly.setAttribute("stroke-width", "2");
-  svg.appendChild(poly);
-  return svg;
-}
-
-function renderPerformance(d) {
-  const el = $("#performance");
-  if (!el) return;
-  el.replaceChildren();
-  const bc = d.base_currency || "USD";
-  const points = d.points || 0;
-
-  if (points < 2) {
-    const p = document.createElement("div");
-    p.className = "muted";
-    p.textContent = "Not enough history yet — metrics appear after a couple of daily snapshots.";
-    el.appendChild(p);
-    return;
-  }
-
-  const cells = [
-    ["Total return", fmtPctCell(d.total_return_pct)],
-    ["CAGR", fmtPctCell(d.cagr_pct)],
-    ["Sharpe", d.sharpe ?? "—"],
-    ["Sortino", d.sortino ?? "—"],
-    ["Volatility", fmtPctCell(d.volatility_pct)],
-    ["Max drawdown", fmtPctCell(d.max_drawdown_pct)],
-  ];
-  for (const [label, value] of cells) {
-    const card = document.createElement("div");
-    card.className = "card";
-    const l = document.createElement("div");
-    l.className = "label";
-    l.textContent = label;
-    const v = document.createElement("div");
-    v.className = "value";
-    v.textContent = value;
-    card.append(l, v);
-    el.appendChild(card);
-  }
-
-  const chart = document.createElement("div");
-  chart.className = "card perf-chart";
-  const cl = document.createElement("div");
-  cl.className = "label";
-  cl.textContent = `Equity curve (${bc})`;
-  chart.appendChild(cl);
-  chart.appendChild(sparkline((d.series || []).map((p) => p.value)));
-  el.appendChild(chart);
-
-  if (d.benchmark) {
-    const card = document.createElement("div");
-    card.className = "card";
-    const l = document.createElement("div");
-    l.className = "label";
-    l.textContent = `${d.benchmark.symbol} buy & hold`;
-    const v = document.createElement("div");
-    v.className = "value";
-    v.textContent = fmtPctCell(d.benchmark.total_return_pct);
-    const sub = document.createElement("div");
-    sub.className = "muted";
-    sub.style.fontSize = "12px";
-    const diff = (d.total_return_pct ?? 0) - (d.benchmark.total_return_pct ?? 0);
-    sub.textContent = `Portfolio ${fmtPctCell(d.total_return_pct)} · ${diff >= 0 ? "ahead" : "behind"} by ${Math.abs(diff).toFixed(2)}%`;
-    card.append(l, v, sub);
-    el.appendChild(card);
-  }
-}
-
-async function loadPerformance() {
-  try {
-    const d = await api("/api/performance");
-    renderPerformance(d);
-  } catch (e) {
-    /* ignore */
-  }
-}
-
-async function loadPortfolio() {
-  setStatus("Loading portfolio…");
-  try {
-    const data = await api("/api/portfolio");
-
-    const bc = data.base_currency || "USD";
-    $("#summary").innerHTML = `
-      <div class="card"><div class="label">Total value (${bc})</div><div class="value">${money(data.total_value)}</div></div>
-      <div class="card"><div class="label">Cash (${bc})</div><div class="value">${money(data.cash)}</div></div>
-      <div class="card"><div class="label">Market value (${bc})</div><div class="value">${money(data.market_value)}</div></div>
-      <div class="card"><div class="label">Unrealized P&amp;L (${bc})</div><div class="value ${cls(data.unrealized_pnl)}">${money(data.unrealized_pnl)}</div></div>
-      <div class="card"><div class="label">Realized P&amp;L (${bc})</div><div class="value ${cls(data.realized_pnl)}">${money(data.realized_pnl)}</div></div>
-    `;
-
-    const openBody = $("#open-table tbody");
-    openBody.innerHTML = "";
-    for (const p of data.open_positions) {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td class="ticker-cell"></td>
-        <td>${p.shares}</td>
-        <td>${moneyCcy(p.entry_price, p.currency)}</td>
-        <td>${moneyCcy(p.current_price, p.currency)}</td>
-        <td class="${cls(p.return_pct)}">${pct(p.return_pct)}</td>
-        <td class="${cls(p.unrealized_pnl)}">${money(p.unrealized_pnl)}</td>
-        <td class="jev-cell">${jevExitCell(p)}</td>
-        <td>${signalPill(p)}</td>
-        <td><button class="sell" data-id="${p.id}" data-ticker="${p.ticker}">Sell</button></td>`;
-      tr.querySelector(".ticker-cell").appendChild(makeTickerSpan(p.ticker, p.company || {}));
-      openBody.appendChild(tr);
-    }
-    if (!data.open_positions.length) {
-      openBody.innerHTML = `<tr><td colspan="9" class="muted">No open positions. Buy something from the Screener.</td></tr>`;
-    }
-
-    const closedBody = $("#closed-table tbody");
-    closedBody.innerHTML = "";
-    for (const p of data.closed_positions) {
-      const entryBase = p.entry_price * (p.entry_fx || 1);
-      const exitBase = p.exit_price * (p.exit_fx || 1);
-      const pnl = (exitBase - entryBase) * p.shares;
-      const ret = entryBase ? ((exitBase - entryBase) / entryBase) * 100 : 0;
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td class="ticker-cell"></td>
-        <td>${p.shares}</td>
-        <td>${moneyCcy(p.entry_price, p.currency)}</td>
-        <td>${moneyCcy(p.exit_price, p.currency)}</td>
-        <td class="${cls(pnl)}">${money(pnl)} (${pct(ret)})</td>
-        <td class="muted">${(p.exit_date || "").replace("T", " ")}</td>`;
-      tr.querySelector(".ticker-cell").appendChild(makeTickerSpan(p.ticker, p.company || {}));
-      closedBody.appendChild(tr);
-    }
-    if (!data.closed_positions.length) {
-      closedBody.innerHTML = `<tr><td colspan="6" class="muted">No closed positions yet.</td></tr>`;
-    }
-
-    renderPortfolioReview(data.portfolio_review);
-    setStatus(`Updated ${new Date().toLocaleTimeString()}`);
-  } catch (e) {
-    setStatus("Portfolio failed: " + e.message);
-  }
-}
-
-async function sell(id, ticker) {
-  if (!confirm(`Sell ${ticker} at the latest price?`)) return;
-  setStatus(`Selling ${ticker}…`);
-  try {
-    const res = await api("/api/sell", {
-      method: "POST",
-      body: JSON.stringify({ position_id: id }),
-    });
-    setStatus(`Sold ${ticker} at ${money(res.exit_price)}`);
-    loadPortfolio().then(loadPerformance);
-  } catch (e) {
-    alert(e.message);
-    setStatus("Sell failed");
-  }
-}
-
 async function runScreener() {
   const useJev = $("#jev-toggle")?.checked ?? true;
+  const spinner = $("#spinner");
   setStatus(useJev ? "Screening with Jev… (can take ~30s)" : "Screening…");
+  if (spinner) spinner.hidden = false;
   $("#run-btn").disabled = true;
   try {
     const data = await api(`/api/screen?jev=${useJev ? 1 : 0}`);
@@ -301,9 +117,14 @@ async function runScreener() {
   } catch (e) {
     setStatus("Screener failed: " + e.message);
   } finally {
+    if (spinner) spinner.hidden = true;
     $("#run-btn").disabled = false;
   }
 }
+
+// Feather-style icon for the screener row delete action.
+const ICON_DELETE =
+  '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>';
 
 function renderScreen(data) {
   const body = $("#screen-table tbody");
@@ -325,7 +146,9 @@ function renderScreen(data) {
       <td>${num(r.atr_pct)}</td>
       <td>${num(r.momentum_score, 3)}</td>
       <td class="ai-cell"></td>
-      <td><button class="buy" data-ticker="${r.ticker}">Buy</button></td>`;
+      <td class="row-actions">
+        ${r.discovered ? "" : `<button class="delete" data-ticker="${r.ticker}" title="Remove ${r.ticker} from watchlist" aria-label="Remove ${r.ticker}">${ICON_DELETE}</button>`}
+      </td>`;
     const tickerCell = tr.querySelector(".ticker-cell");
     const tickerSpan = makeTickerSpan(r.ticker, co);
     if (r.pick) {
@@ -356,13 +179,12 @@ function makeTickerSpan(ticker, company) {
   const span = document.createElement("span");
   span.className = "ticker";
   span.textContent = ticker;
+  span.dataset.ticker = ticker;
   const name = (company && company.name) || "";
   const desc = (company && company.description) || "";
-  if (name || desc) {
-    span.dataset.name = name || ticker;
-    span.dataset.desc = desc || "No description available.";
-    span.dataset.tip = "1";
-  }
+  span.dataset.name = name || ticker;
+  span.dataset.desc = desc || "No description available.";
+  span.dataset.tip = "1";
   return span;
 }
 
@@ -439,13 +261,225 @@ function hideTooltip() {
 
 const isTouchDevice = !!(window.matchMedia && window.matchMedia("(hover: none)").matches);
 
+// ---- Chart popup (hover a ticker) ------------------------------------------
+const CHART_RANGES = ["1d", "5d", "1m", "3m", "6m", "1y", "5y", "10y"];
+let _chartPopup = null;
+let _chartTicker = null;
+let _chartRange = "6m";
+let _chartReq = 0;
+let _hideChartTimer = null;
+
+function getChartPopup() {
+  if (!_chartPopup) {
+    _chartPopup = document.createElement("div");
+    _chartPopup.className = "chart-popup";
+
+    const head = document.createElement("div");
+    head.className = "cp-head";
+    const tickerEl = document.createElement("span");
+    tickerEl.className = "cp-ticker";
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "cp-close";
+    close.textContent = "✕";
+    close.title = "Close";
+    close.addEventListener("click", hideChartPopup);
+    head.append(tickerEl, close);
+
+    const name = document.createElement("div");
+    name.className = "cp-name";
+
+    const ranges = document.createElement("div");
+    ranges.className = "cp-ranges";
+    for (const r of CHART_RANGES) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "cp-range";
+      btn.textContent = r;
+      btn.dataset.range = r;
+      btn.addEventListener("click", () => {
+        _chartRange = r;
+        setActiveRange();
+        loadChart(_chartTicker, r);
+      });
+      ranges.appendChild(btn);
+    }
+
+    const chart = document.createElement("div");
+    chart.className = "cp-chart";
+
+    const status = document.createElement("div");
+    status.className = "cp-status";
+
+    _chartPopup.append(head, name, ranges, chart, status);
+    document.body.appendChild(_chartPopup);
+  }
+  return _chartPopup;
+}
+
+function setActiveRange() {
+  const popup = getChartPopup();
+  popup.querySelectorAll(".cp-range").forEach((b) => {
+    b.classList.toggle("active", b.dataset.range === _chartRange);
+  });
+}
+
+function positionChartPopup(x, y) {
+  const popup = getChartPopup();
+  const rect = popup.getBoundingClientRect();
+  const pad = 14;
+  let left = x + pad;
+  let top = y + pad;
+  if (left + rect.width > window.innerWidth - 8) left = x - rect.width - pad;
+  if (top + rect.height > window.innerHeight - 8) top = y - rect.height - pad;
+  popup.style.left = Math.max(8, left) + "px";
+  popup.style.top = Math.max(8, top) + "px";
+}
+
+function shortDesc(desc) {
+  const s = String(desc || "").trim();
+  if (!s) return "";
+  return s.length > 220 ? s.slice(0, 220).replace(/\s+\S*$/, "") + "…" : s;
+}
+
+function showChartPopup(ticker, name, desc, x, y) {
+  const popup = getChartPopup();
+  _chartTicker = ticker;
+  const tickerEl = popup.querySelector(".cp-ticker");
+  tickerEl.textContent = ticker;
+  tickerEl.dataset.name = name || ticker;
+  tickerEl.dataset.desc = shortDesc(desc);
+  tickerEl.dataset.tip = "1";
+  popup.querySelector(".cp-name").textContent = name || "";
+  setActiveRange();
+  popup.classList.add("show");
+  positionChartPopup(x, y);
+  loadChart(ticker, _chartRange);
+}
+
+function hideChartPopup() {
+  clearTimeout(_hideChartTimer);
+  if (_chartPopup) _chartPopup.classList.remove("show");
+  _chartTicker = null;
+}
+
+function scheduleHideChartPopup() {
+  clearTimeout(_hideChartTimer);
+  _hideChartTimer = setTimeout(hideChartPopup, 250);
+}
+
+function cancelHideChartPopup() {
+  clearTimeout(_hideChartTimer);
+}
+
+async function loadChart(ticker, range) {
+  const req = ++_chartReq;
+  const popup = getChartPopup();
+  const chartEl = popup.querySelector(".cp-chart");
+  const statusEl = popup.querySelector(".cp-status");
+  if (statusEl) statusEl.textContent = "Loading…";
+  try {
+    const data = await api(`/api/chart/${encodeURIComponent(ticker)}?range=${range}`);
+    if (req !== _chartReq) return; // stale response
+    renderChartPopup(chartEl, data.points || []);
+    if (statusEl) {
+      const n = (data.points || []).length;
+      statusEl.textContent = n ? `${n} points` : "No data";
+    }
+  } catch (err) {
+    if (req !== _chartReq) return;
+    chartEl.replaceChildren();
+    if (statusEl) statusEl.textContent = "Failed: " + err.message;
+  }
+}
+
+function fmtPrice(v) {
+  if (v >= 1000) return Math.round(v).toLocaleString();
+  if (v >= 10) return v.toFixed(0);
+  return v.toFixed(2);
+}
+
+function shortDate(s) {
+  const d = String(s || "");
+  return d.length > 10 ? d.slice(5, 10) : d;
+}
+
+function renderChartPopup(chartEl, points) {
+  chartEl.replaceChildren();
+  if (!points || points.length < 2) {
+    const p = document.createElement("div");
+    p.className = "cp-empty";
+    p.textContent = "No price data available.";
+    chartEl.appendChild(p);
+    return;
+  }
+  const W = 316, H = 120, padL = 46, padR = 6, padT = 8, padB = 18;
+  const prices = points.map((p) => p.price);
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  const span = max - min || 1;
+  const n = points.length;
+  const x = (i) => padL + (i * (W - padL - padR)) / (n - 1);
+  const y = (v) => padT + (1 - (v - min) / span) * (H - padT - padB);
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, class: "chart cp-svg" });
+
+  // horizontal grid lines + price labels
+  for (let g = 0; g <= 3; g++) {
+    const val = min + (span * g) / 3;
+    const gy = y(val);
+    svg.appendChild(svgEl("line", { x1: padL, y1: gy, x2: W - padR, y2: gy, class: "grid" }));
+    const label = svgEl("text", { x: padL - 4, y: gy + 3, class: "axis", "text-anchor": "end" });
+    label.textContent = fmtPrice(val);
+    svg.appendChild(label);
+  }
+
+  // price line
+  const pts = points.map((p, i) => [x(i), y(p.price)]);
+  const color = prices[n - 1] >= prices[0] ? "#3fb950" : "#f85149";
+  svg.appendChild(svgPolyline(pts, color));
+
+  // first/last date labels
+  const start = svgEl("text", { x: padL, y: H - 4, class: "axis", "text-anchor": "start" });
+  start.textContent = shortDate(points[0].date);
+  svg.appendChild(start);
+  const end = svgEl("text", { x: W - padR, y: H - 4, class: "axis", "text-anchor": "end" });
+  end.textContent = shortDate(points[n - 1].date);
+  svg.appendChild(end);
+
+  chartEl.appendChild(svg);
+}
+
+// ---- Tooltip / chart-popup hover handling ---------------------------------
 document.addEventListener("mouseover", (e) => {
   if (isTouchDevice) return;
+  const tickerEl = e.target.closest && e.target.closest(".ticker");
+  if (tickerEl) {
+    cancelHideChartPopup();
+    const t = tickerEl.dataset.ticker;
+    if (_chartTicker !== t) {
+      showChartPopup(t, tickerEl.dataset.name, tickerEl.dataset.desc, e.clientX, e.clientY);
+    } else {
+      positionChartPopup(e.clientX, e.clientY);
+    }
+    return;
+  }
+  if (_chartPopup && _chartPopup.contains(e.target)) {
+    cancelHideChartPopup();
+    const tipTarget = e.target.closest && e.target.closest("[data-tip]");
+    if (tipTarget) showTooltip(tipTarget, e.clientX, e.clientY);
+    return;
+  }
   const target = e.target.closest && e.target.closest("[data-tip]");
   if (target) showTooltip(target, e.clientX, e.clientY);
 });
 document.addEventListener("mouseout", (e) => {
   if (isTouchDevice) return;
+  if (e.target.closest && e.target.closest(".ticker")) {
+    scheduleHideChartPopup();
+  }
+  if (_chartPopup && _chartPopup.contains(e.target)) {
+    scheduleHideChartPopup();
+  }
   if (e.target.closest && e.target.closest("[data-tip]")) hideTooltip();
 });
 document.addEventListener("mousemove", (e) => {
@@ -454,8 +488,35 @@ document.addEventListener("mousemove", (e) => {
 // Touch devices have no hover: tap a ticker/heading to show the bubble, tap away to hide.
 document.addEventListener("click", (e) => {
   if (!isTouchDevice) return;
+  if (_chartPopup && _chartPopup.contains(e.target)) {
+    // Tap the ticker name to see its description; let range buttons work.
+    const tipEl = e.target.closest && e.target.closest("[data-tip]");
+    if (tipEl && tipEl.classList.contains("cp-ticker")) {
+      const x = e.clientX || window.innerWidth / 2;
+      const y = e.clientY || 80;
+      if (_tipTarget === tipEl && _tooltip && _tooltip.classList.contains("show")) {
+        hideTooltip();
+      } else {
+        showTooltip(tipEl, x, y);
+      }
+    }
+    return;
+  }
+  const tickerEl = e.target.closest && e.target.closest(".ticker");
+  if (tickerEl) {
+    const t = tickerEl.dataset.ticker;
+    const x = e.clientX || window.innerWidth / 2;
+    const y = e.clientY || 80;
+    if (_chartTicker === t && _chartPopup && _chartPopup.classList.contains("show")) {
+      hideChartPopup();
+    } else {
+      showChartPopup(t, tickerEl.dataset.name, tickerEl.dataset.desc, x, y);
+    }
+    return;
+  }
   const target = e.target.closest && e.target.closest("[data-tip]");
   if (!target) {
+    hideChartPopup();
     hideTooltip();
     return;
   }
@@ -467,50 +528,41 @@ document.addEventListener("click", (e) => {
     showTooltip(target, x, y);
   }
 });
-window.addEventListener("scroll", hideTooltip, true);
-
-async function buy(ticker) {
-  const sharesStr = prompt(`How many shares of ${ticker}?`, "10");
-  if (sharesStr === null) return;
-  const shares = Number(sharesStr);
-  if (!shares || shares <= 0) {
-    alert("Enter a positive number of shares.");
-    return;
-  }
-  const stop = prompt("Stop-loss % (optional, blank to skip)", "10");
-  const take = prompt("Take-profit % (optional, blank to skip)", "25");
-  const trail = prompt("Trailing stop % from peak (optional, blank to skip)", "");
-
-  setStatus(`Buying ${shares} ${ticker}…`);
-  try {
-    const res = await api("/api/buy", {
-      method: "POST",
-      body: JSON.stringify({
-        ticker,
-        shares,
-        stop_loss_pct: stop || null,
-        take_profit_pct: take || null,
-        trailing_stop_pct: trail || null,
-      }),
-    });
-    setStatus(`Bought ${shares} ${ticker} at ${money(res.entry_price)}`);
-  } catch (e) {
-    alert(e.message);
-    setStatus("Buy failed");
-  }
-}
+window.addEventListener("scroll", () => {
+  hideTooltip();
+  hideChartPopup();
+}, true);
 
 async function addTicker() {
   const input = $("#ticker-input");
-  const ticker = input.value.trim().toUpperCase();
-  if (!ticker) return;
+  const raw = input.value.trim();
+  if (!raw) return;
   try {
     const data = await api("/api/watchlist", {
       method: "POST",
-      body: JSON.stringify({ ticker }),
+      body: JSON.stringify({ query: raw }),
     });
     input.value = "";
+    const r = data.resolved || {};
+    const ticker = r.ticker || raw;
+    const name = r.name && r.name !== ticker ? ` (${r.name})` : "";
+    setStatus(data.added ? `Added ${ticker}${name}` : `${ticker} is already in the watchlist`);
     $("#watchlist-count").textContent = `${data.tickers.length} tickers in watchlist`;
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+async function removeTicker(ticker) {
+  if (!confirm(`Remove ${ticker} from the watchlist?`)) return;
+  try {
+    const data = await api(`/api/watchlist/${encodeURIComponent(ticker)}`, { method: "DELETE" });
+    setStatus(`Removed ${ticker} from watchlist`);
+    $("#watchlist-count").textContent = `${data.tickers.length} tickers in watchlist`;
+    // Remove the row from the table without a full re-run.
+    const btn = document.querySelector(`button.delete[data-ticker="${CSS.escape(ticker)}"]`);
+    const row = btn && btn.closest("tr");
+    if (row) row.remove();
   } catch (e) {
     alert(e.message);
   }
@@ -716,19 +768,147 @@ async function runBacktest(event) {
 }
 
 document.addEventListener("click", (e) => {
-  const sellBtn = e.target.closest("button.sell");
-  if (sellBtn) sell(sellBtn.dataset.id, sellBtn.dataset.ticker);
-  const buyBtn = e.target.closest("button.buy");
-  if (buyBtn) buy(buyBtn.dataset.ticker);
+  const delBtn = e.target.closest("button.delete");
+  if (delBtn) removeTicker(delBtn.dataset.ticker);
 });
+
+function card(label, value, tip, valueCls) {
+  const c = document.createElement("div");
+  c.className = "card";
+  const l = document.createElement("div");
+  l.className = "label";
+  l.textContent = label;
+  if (tip) {
+    l.dataset.tip = "1";
+    l.dataset.name = label;
+    l.dataset.desc = tip;
+  }
+  const v = document.createElement("div");
+  v.className = "value";
+  v.textContent = value;
+  if (valueCls) v.classList.add(valueCls);
+  c.appendChild(l);
+  c.appendChild(v);
+  return c;
+}
+
+function fillRow(tbody, cells) {
+  const tr = document.createElement("tr");
+  tr.innerHTML = cells
+    .map((c) => `<td class="${c.cls || ""}">${c.text}</td>`)
+    .join("");
+  tbody.appendChild(tr);
+}
+
+function emptyRow(tbody, cols, msg) {
+  tbody.innerHTML = `<tr><td colspan="${cols}" class="muted">${msg}</td></tr>`;
+}
+
+function renderEvaluation(d) {
+  const ov = d.overview || {};
+  const ovEl = $("#ev-overview");
+  ovEl.innerHTML = "";
+  ovEl.appendChild(card("Total decisions", ov.total_entries ?? "—"));
+  ovEl.appendChild(card("Resolved", ov.resolved_entries ?? "—"));
+  ovEl.appendChild(card("Screen runs", ov.total_screen_runs ?? "—"));
+  ovEl.appendChild(card("Resolved runs", ov.resolved_screen_runs ?? "—"));
+  ovEl.appendChild(card("Auto-pick K", ov.auto_pick_count ?? "—"));
+  const win =
+    ov.first_decision && ov.last_decision
+      ? `${String(ov.first_decision).slice(0, 10)} → ${String(ov.last_decision).slice(0, 10)}`
+      : "—";
+  ovEl.appendChild(card("Data window", win));
+
+  const vb = $("#ev-verdicts tbody");
+  vb.innerHTML = "";
+  const verdicts = (d.entry_verdicts || {}).verdict || [];
+  verdicts.forEach((v) => {
+    fillRow(vb, [
+      { text: v.label },
+      { text: fmtPctCell(v.mean_forward_20d), cls: cls(v.mean_forward_20d) },
+      { text: v.n ?? "—" },
+    ]);
+  });
+  if (!verdicts.length) emptyRow(vb, 3, "No resolved entry decisions yet.");
+
+  const bb = $("#ev-buy tbody");
+  bb.innerHTML = "";
+  const buys = (d.entry_verdicts || {}).is_buy_candidate || [];
+  buys.forEach((v) => {
+    fillRow(bb, [
+      { text: v.label },
+      { text: fmtPctCell(v.mean_forward_20d), cls: cls(v.mean_forward_20d) },
+      { text: v.n ?? "—" },
+    ]);
+  });
+  if (!buys.length) emptyRow(bb, 3, "No resolved buy-candidate decisions yet.");
+
+  $("#ev-k").textContent = `K=${d.top_k ?? "?"}`;
+
+  const rc = $("#ev-rank-cards");
+  rc.innerHTML = "";
+  const rs = (d.ranking || {}).summary || {};
+  rc.appendChild(card("Final-score avg",
+    rs.final_mean === null || rs.final_mean === undefined ? "—" : fmtPctCell(rs.final_mean),
+    "Mean 20-day forward return of the top-K by Final score.", cls(rs.final_mean)));
+  rc.appendChild(card("Momentum avg",
+    rs.momentum_mean === null || rs.momentum_mean === undefined ? "—" : fmtPctCell(rs.momentum_mean),
+    "Mean 20-day forward return of the top-K by Momentum.", cls(rs.momentum_mean)));
+  rc.appendChild(card("Diff",
+    rs.diff === null || rs.diff === undefined ? "—" : fmtPctCell(rs.diff),
+    "Final avg minus Momentum avg. Positive means Jev's re-rank did better.", cls(rs.diff)));
+
+  const rb = $("#ev-rank tbody");
+  rb.innerHTML = "";
+  const runs = (d.ranking || {}).runs || [];
+  runs.forEach((r) => {
+    fillRow(rb, [
+      { text: r.run_at },
+      { text: r.k },
+      { text: fmtPctCell(r.final_mean), cls: cls(r.final_mean) },
+      { text: fmtPctCell(r.momentum_mean), cls: cls(r.momentum_mean) },
+      { text: r.diff === null || r.diff === undefined ? "—" : fmtPctCell(r.diff), cls: cls(r.diff) },
+    ]);
+  });
+  if (!runs.length) emptyRow(rb, 5, "No resolved screen runs yet.");
+
+  const cb = $("#ev-calib tbody");
+  cb.innerHTML = "";
+  const calib = d.calibration || {};
+  ["risk_at_entry", "trend_quality", "momentum_sustainability"].forEach((k) => {
+    const c = calib[k] || {};
+    fillRow(cb, [
+      { text: c.field || k },
+      { text: c.corr === null || c.corr === undefined ? "—" : num(c.corr, 2) },
+      { text: c.n ?? "—" },
+    ]);
+  });
+
+  const caves = $("#ev-caveats");
+  caves.innerHTML = "";
+  (d.caveats || []).forEach((t) => {
+    const li = document.createElement("li");
+    li.textContent = t;
+    caves.appendChild(li);
+  });
+}
+
+async function runEvaluation() {
+  setStatus("Loading evaluation…");
+  $("#ev-run").disabled = true;
+  try {
+    const d = await api("/api/evaluation");
+    renderEvaluation(d);
+    setStatus(`Report generated at ${d.generated_at}`);
+  } catch (e) {
+    setStatus("Evaluation failed: " + e.message);
+  } finally {
+    $("#ev-run").disabled = false;
+  }
+}
 
 document.addEventListener("DOMContentLoaded", () => {
   loadConfig();
-  if (window.PAGE === "dashboard") {
-    const refresh = () => loadPortfolio().then(loadPerformance);
-    $("#refresh-btn")?.addEventListener("click", refresh);
-    refresh();
-  }
   if (window.PAGE === "screener") {
     $("#run-btn")?.addEventListener("click", runScreener);
     $("#add-ticker-btn")?.addEventListener("click", addTicker);
@@ -740,4 +920,11 @@ document.addEventListener("DOMContentLoaded", () => {
   if (window.PAGE === "backtest") {
     $("#bt-form")?.addEventListener("submit", runBacktest);
   }
+  if (window.PAGE === "evaluate") {
+    $("#ev-run")?.addEventListener("click", runEvaluation);
+    runEvaluation();
+  }
+
+  initTheme();
+  $("#theme-btn")?.addEventListener("click", cycleTheme);
 });

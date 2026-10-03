@@ -14,7 +14,6 @@ except Exception:  # pragma: no cover - dotenv is optional at runtime
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
-DB_PATH = DATA_DIR / "portfolio.db"
 WATCHLIST_PATH = DATA_DIR / "watchlist.json"
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)

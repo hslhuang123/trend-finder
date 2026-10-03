@@ -6,16 +6,26 @@
   <title>TrendFinder</title>
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}" />
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  <script>
+    // Apply the saved theme before first paint to avoid a flash of the wrong theme.
+    (function () {
+      try {
+        var t = localStorage.getItem("theme");
+        if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    })();
+  </script>
 </head>
 <body>
   <header class="topbar">
     <div class="brand">📈 TrendFinder</div>
     <nav>
-      <a href="/">Portfolio</a>
       <a href="/screener">Screener</a>
       <a href="/backtest">Backtest</a>
+      <a href="/evaluate">Evaluate</a>
       <a href="/help">Help</a>
       <span id="jev-badge" class="badge">Jev: …</span>
+      <button id="theme-btn" class="theme-btn" type="button" title="Theme: system">🌗</button>
     </nav>
   </header>
   <main>

@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 .env
-data/companies.json
-data/decisions.db
+.git/
+.gitignore
 app.log
+data/companies.json
