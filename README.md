@@ -95,6 +95,9 @@ daily ranges (1m/3m/6m/1y) since the data is precomputed for the iframe; intrada
 > for durable storage you'd need to point `trendfinder/config.py` at a hosted
 > database or object store.
 
+See **[docs/deployment.md](docs/deployment.md)** for a full comparison of
+Streamlit Cloud vs Render/Railway/Fly.io, costs, and where the data lives.
+
 ### Testing on a phone (same Wi-Fi)
 
 The server binds to `127.0.0.1` by default, so only this computer can reach it.
