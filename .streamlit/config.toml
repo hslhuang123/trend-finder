@@ -1,0 +1,10 @@
+[client]
+# Hide the Streamlit hamburger/Deploy toolbar for a cleaner deployed app.
+toolbarMode = "minimal"
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+# Match the app's accent colour (GitHub blue used across the screener).
+primaryColor = "#0969da"
