@@ -77,13 +77,46 @@ def _fmt_num(v: float | None, digits: int = 2) -> str:
 # Embeds the exact same static/style.css as the Flask app so the table looks
 # identical; only the hover tooltip is kept (no price-chart popup).
 # --------------------------------------------------------------------------- #
-def _streamlit_theme() -> str:
-    """Return 'light', 'dark', or '' (follow OS) based on Streamlit's theme."""
+# Theme toggle (System / Light / Dark) for both the Streamlit UI and the table.
+# --------------------------------------------------------------------------- #
+_DARK_CSS = """
+:root { color-scheme: dark; }
+html, body, [data-testid="stAppViewContainer"], [data-testid="stMainBlockContainer"] { background-color: #0e1116 !important; color: #e6edf3 !important; }
+[data-testid="stSidebar"] { background-color: #161b22 !important; color: #e6edf3 !important; }
+[data-testid="stHeader"] { background-color: #0e1116 !important; color: #e6edf3 !important; }
+h1,h2,h3,h4,h5,h6,p,span,label,div,strong,em,li { color: #e6edf3 !important; }
+a { color: #58a6ff !important; }
+[data-testid="stMetric"], [data-testid="stMetricValue"], [data-testid="stMetricLabel"] { background-color: #161b22 !important; color: #e6edf3 !important; }
+[data-testid="stDataFrame"] { background-color: #161b22 !important; }
+.stButton button, [data-testid="stBaseButton-primary"], [data-testid="stBaseButton-secondary"] { background-color: #1c232c !important; color: #e6edf3 !important; border-color: #2a323d !important; }
+[data-testid="stExpander"] details, [data-testid="stExpander"] summary { background-color: #161b22 !important; }
+[data-testid="stTextInput"] input, [data-testid="stNumberInput"] input, [data-testid="stSelectbox"], [data-testid="stMultiSelect"] { background-color: #1c232c !important; color: #e6edf3 !important; border-color: #2a323d !important; }
+[data-testid="stAlert"], [data-testid="stNotification"] { background-color: #1c232c !important; color: #e6edf3 !important; }
+[data-testid="stSidebar"] .stRadio label, [data-testid="stSidebar"] .stRadio p { color: #e6edf3 !important; }
+"""
+
+_LIGHT_RESET = """:root { color-scheme: light; }"""
+
+
+def _theme_css(mode: str) -> str:
+    if mode == "dark":
+        return _DARK_CSS
+    if mode == "system":
+        return f"@media (prefers-color-scheme: dark) {{\n{_DARK_CSS}\n}}"
+    return _LIGHT_RESET
+
+
+def _inject_theme_css(mode: str) -> None:
     try:
-        base = st.get_option("theme.base")
-    except Exception:  # noqa: BLE001 - fall back to system
-        return ""
-    return base if base in ("light", "dark") else ""
+        st.markdown(f"<style>{_theme_css(mode)}</style>", unsafe_allow_html=True)
+    except Exception:  # noqa: BLE001 - theme CSS must never break the app
+        pass
+
+
+def _streamlit_theme() -> str:
+    """Return 'light', 'dark', or '' (follow OS) for the embedded screener table."""
+    mode = st.session_state.get("theme_mode", "system")
+    return mode if mode in ("light", "dark") else ""
 
 
 _STATIC_CSS_CACHE: str | None = None
@@ -732,9 +765,13 @@ def main() -> None:
     with st.sidebar:
         st.header("📈 TrendFinder")
         page = st.radio("Navigation", ["Screener", "Backtest", "Evaluate", "Help"])
+        theme_choice = st.radio("Theme", ["System", "Light", "Dark"], index=0, key="theme_choice")
+        st.session_state["theme_mode"] = theme_choice.lower()
         jev = "on" if config.has_jev() else "off (no API key)"
         st.caption(f"Jev: {jev}")
         st.caption(f"Model: `{config.JEV_MODEL}`")
+
+    _inject_theme_css(st.session_state.get("theme_mode", "system"))
 
     if page == "Screener":
         _render_screener()
