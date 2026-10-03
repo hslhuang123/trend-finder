@@ -1,3 +1,7 @@
+[server]
+# Streamlit Community Cloud runs headless; this also matches local runs.
+headless = true
+
 [client]
 # Hide the Streamlit hamburger/Deploy toolbar for a cleaner deployed app.
 toolbarMode = "minimal"
