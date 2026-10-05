@@ -116,12 +116,18 @@ a { color: #58a6ff !important; }
 
 _LIGHT_RESET = """:root { color-scheme: light; }"""
 
+# Layout tweaks applied in every theme (not just dark). Streamlit's default
+# metric value is 36px, which is oversized for a row of six summary cards.
+_LAYOUT_CSS = """
+[data-testid="stMetricValue"] { font-size: 1.5rem !important; line-height: 1.25 !important; }
+"""
+
 def _theme_css(mode: str) -> str:
     if mode == "dark":
-        return _DARK_CSS
+        return _DARK_CSS + _LAYOUT_CSS
     if mode == "system":
-        return f"@media (prefers-color-scheme: dark) {{\n{_DARK_CSS}\n}}"
-    return _LIGHT_RESET
+        return f"@media (prefers-color-scheme: dark) {{\n{_DARK_CSS}\n}}" + _LAYOUT_CSS
+    return _LIGHT_RESET + _LAYOUT_CSS
 
 
 def _inject_theme_css(mode: str) -> None:
