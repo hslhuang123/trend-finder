@@ -39,18 +39,6 @@ _ENV_OPENROUTER_KEY = config.OPENROUTER_API_KEY
 # Make sure the decision-log tables exist (used by the screener + Evaluate tab).
 decisions.init_db()
 
-# Chart ranges -> (yfinance period, interval).
-CHART_RANGES = {
-    "1d": ("1d", "5m"),
-    "5d": ("5d", "15m"),
-    "1m": ("1mo", "1d"),
-    "3m": ("3mo", "1d"),
-    "6m": ("6mo", "1d"),
-    "1y": ("1y", "1d"),
-    "5y": ("5y", "1d"),
-    "10y": ("10y", "1d"),
-}
-
 
 # --------------------------------------------------------------------------- #
 # Small formatting helpers
@@ -457,25 +445,6 @@ def _persist_watchlist() -> None:
 # --------------------------------------------------------------------------- #
 # Screener tab
 # --------------------------------------------------------------------------- #
-def _render_screener_chart(results: list[dict]) -> None:
-    """A range selectbox + line chart for a chosen ticker (replaces the hover popup)."""
-    tickers = [r["ticker"] for r in results]
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        ticker = st.selectbox("Chart ticker", tickers, key="screen_chart_ticker")
-    with col2:
-        rng = st.selectbox("Range", list(CHART_RANGES.keys()), index=4, key="screen_chart_range")
-    period, interval = CHART_RANGES[rng]
-    points = market_data.fetch_price_history(ticker, period=period, interval=interval)
-    if not points:
-        st.info(f"No price history for {ticker}.")
-        return
-    df = pd.DataFrame(points)
-    df["date"] = pd.to_datetime(df["date"])
-    df = df.set_index("date")
-    st.line_chart(df["price"], height=280)
-
-
 def _render_screener() -> None:
     st.title("Trending stocks")
     st.caption("Screener — checks the stock you enter plus two freshly discovered "
@@ -569,10 +538,6 @@ def _render_screener() -> None:
         height=height,
     )
     st.caption("Hover the **AI** badge for the AI analysis · hover a **ticker** for its chart · hover a **column heading** for what it means.")
-
-    # --- Chart ---
-    st.subheader("Price chart")
-    _render_screener_chart(rows)
 
 
 # --------------------------------------------------------------------------- #
