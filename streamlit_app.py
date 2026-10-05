@@ -405,13 +405,21 @@ def _screener_table_html(results: list[dict], charts: dict | None = None) -> str
         if j.get("is_buy_candidate") is not None:
             buy = f"{100 if j['is_buy_candidate'] else 0}%"
         final = _fmt_num(r.get("final_score"), 3)
-        tip = (
-            f"Quality: {q_disp} — {q_note}\n"
-            f"Risk: {rk_disp} — {rk_note}\n"
-            f"Buy: {buy} — qualifies as a buy candidate (no if risk is high)\n"
-            f"Verdict: {verdict_label} — overall call: buy now / watch / avoid\n"
-            f"Final: {final} — overall ranking score (momentum + AI; higher is better)"
-        )
+        if j:
+            tip = (
+                f"Quality: {q_disp} — {q_note}\n"
+                f"Risk: {rk_disp} — {rk_note}\n"
+                f"Buy: {buy} — qualifies as a buy candidate (no if risk is high)\n"
+                f"Verdict: {verdict_label} — overall call: buy now / watch / avoid\n"
+                f"Final: {final} — overall ranking score (momentum + AI; higher is better)"
+            )
+            tip_title = "AI Analysis"
+        else:
+            tip = (
+                "AI is off — add an OpenRouter key in the sidebar to enable it.\n"
+                f"Final: {final} — ranking score (= momentum while AI is off)"
+            )
+            tip_title = "AI off"
 
         marks = ""
         if r.get("pick"):
@@ -428,7 +436,7 @@ def _screener_table_html(results: list[dict], charts: dict | None = None) -> str
         )
         ai_cell = (
             f"<td class=\"ai-cell\"><span class=\"ai-badge {badge_cls(verdict)}\" "
-            f"data-tip=\"1\" data-name=\"AI Analysis\" data-desc=\"{esc(tip)}\">"
+            f"data-tip=\"1\" data-name=\"{tip_title}\" data-desc=\"{esc(tip)}\">"
             f"{esc(verdict_label)}</span></td>"
         )
         row_cls = "row-discovered" if r.get("discovered") else ""
