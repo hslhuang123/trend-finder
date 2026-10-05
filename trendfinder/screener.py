@@ -69,9 +69,14 @@ def _final_score(momentum: float, jev: dict) -> float:
 def screen(use_jev: bool = True, top_n: int = 25, jev_top: int = 25,
            discover_count: int | None = None,
            watchlist: list[str] | None = None,
-           discover_buy_only: bool = False) -> dict:
+           discover_buy_only: bool = False,
+           api_key: str | None = None) -> dict:
     if discover_count is None:
         discover_count = config.DISCOVER_COUNT
+
+    # Resolve the OpenRouter key for this run. A caller (e.g. the Streamlit app)
+    # can pass a per-session key; otherwise fall back to the environment key.
+    effective_key = (api_key or config.OPENROUTER_API_KEY or "").strip()
 
     # Screen only the tickers we're asked about (a single typed ticker/name in
     # the Streamlit UI), or the persisted watchlist when none is supplied.
@@ -98,7 +103,7 @@ def screen(use_jev: bool = True, top_n: int = 25, jev_top: int = 25,
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "watchlist_size": len(watchlist),
         "scanned": 0,
-        "jev_enabled": bool(use_jev and config.has_jev()),
+        "jev_enabled": bool(use_jev and effective_key),
         "auto_pick_count": config.AUTO_PICK_COUNT,
         "discover_count": discover_count,
     }
@@ -115,7 +120,9 @@ def screen(use_jev: bool = True, top_n: int = 25, jev_top: int = 25,
         states = [(r["ticker"], build_state(r), float(r["momentum_score"]))
                   for _, r in df.head(jev_top).iterrows()]
         with ThreadPoolExecutor(max_workers=6) as pool_exec:
-            answers = list(pool_exec.map(lambda item: jev_client.assess_trend(item[1]), states))
+            answers = list(pool_exec.map(
+                lambda item: jev_client.assess_trend(item[1], api_key=effective_key), states
+            ))
         for (ticker, state, momentum), answer in zip(states, answers):
             if answer:
                 extracted = _extract_entry(answer)

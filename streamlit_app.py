@@ -36,6 +36,16 @@ st.set_page_config(page_title="TrendFinder", layout="wide", page_icon="📈")
 # an empty OpenRouter box in the UI can fall back to it.
 _ENV_OPENROUTER_KEY = config.OPENROUTER_API_KEY
 
+
+def _session_api_key() -> str:
+    """The OpenRouter key for the current browser session.
+
+    The key lives only in Streamlit's per-session state (never in a shared module
+    global), so one user's key can never leak into another user's requests.
+    Falls back to the server's environment key when the box is left blank.
+    """
+    return (st.session_state.get("openrouter_key") or "").strip() or _ENV_OPENROUTER_KEY
+
 # Make sure the decision-log tables exist (used by the screener).
 decisions.init_db()
 
@@ -498,7 +508,7 @@ def _render_screener() -> None:
              "(e.g. \"AAPL, CVE.TO, Rogers\"). The screener matches each one and "
              "then adds a freshly discovered name rated 'buy now'.",
     )
-    use_jev = config.has_jev()
+    use_jev = bool(_session_api_key())
     if use_jev:
         st.caption("Jev is on — it will judge the entrants.")
     else:
@@ -527,7 +537,7 @@ def _render_screener() -> None:
             with st.spinner(f"Screening {label} + 1 discovered… (Jev calls can take ~30s)"):
                 st.session_state.screen_results = screener.screen(
                     use_jev=use_jev, watchlist=tickers, discover_count=1,
-                    discover_buy_only=True,
+                    discover_buy_only=True, api_key=_session_api_key(),
                 )
             # Precompute price history so the hover chart popup works (no API in the
             # iframe). Stored in session_state so it's not refetched on every rerun.
@@ -771,10 +781,8 @@ def main() -> None:
         # Set the OpenRouter key for this session. Assign the module attribute
         # directly (rather than via a helper) so a stale cached copy of the
         # config module can never break app startup.
-        config.OPENROUTER_API_KEY = (
-            st.session_state.get("openrouter_key", "").strip() or _ENV_OPENROUTER_KEY
-        )
-        jev = "on" if config.has_jev() else "off — add your OpenRouter key above"
+        # Use the current session's key only — never write it to a shared global.
+        jev = "on" if _session_api_key() else "off — add your OpenRouter key above"
         st.caption(f"Jev: {jev}")
         st.caption(f"Model: `{config.JEV_MODEL}`")
 

@@ -13,14 +13,19 @@ from . import config
 DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions"
 
 
-def _ask(state: dict, questions: dict) -> dict | None:
-    """Send a state + typed questions to Jev. Returns the answers dict, or None."""
-    if not config.has_jev():
+def _ask(state: dict, questions: dict, api_key: str | None = None) -> dict | None:
+    """Send a state + typed questions to Jev. Returns the answers dict, or None.
+
+    `api_key` is resolved per call (falling back to the configured environment
+    key) so a caller can supply a per-session key without mutating any global.
+    """
+    key = (api_key or config.OPENROUTER_API_KEY or "").strip()
+    if not key:
         return None
 
     payload = {"model": config.JEV_MODEL, "state": state, "questions": questions}
     headers = {
-        "Authorization": f"Bearer {config.OPENROUTER_API_KEY}",
+        "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",
     }
 
@@ -40,7 +45,7 @@ def _ask(state: dict, questions: dict) -> dict | None:
     return data if isinstance(data, dict) else None
 
 
-def assess_trend(state: dict) -> dict | None:
+def assess_trend(state: dict, api_key: str | None = None) -> dict | None:
     """Entry-side: is this a good stock to buy right now?"""
     return _ask(state, {
         "trend_quality": {
@@ -95,7 +100,7 @@ def assess_trend(state: dict) -> dict | None:
                 "avoid": "Not a valid candidate — high risk or weak trend (is_buy_candidate is false)",
             },
         },
-    })
+    }, api_key=api_key)
 
 
 
