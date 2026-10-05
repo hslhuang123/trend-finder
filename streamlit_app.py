@@ -426,20 +426,16 @@ def _screener_table_html(results: list[dict], charts: dict | None = None) -> str
 # --------------------------------------------------------------------------- #
 # Session state
 # --------------------------------------------------------------------------- #
-if "watchlist" not in st.session_state:
-    st.session_state.watchlist = config.load_watchlist()
 if "screen_results" not in st.session_state:
     st.session_state.screen_results = None
 if "screen_charts" not in st.session_state:
     st.session_state.screen_charts = {}
+if "screened_ticker" not in st.session_state:
+    st.session_state.screened_ticker = None
 if "backtest_results" not in st.session_state:
     st.session_state.backtest_results = None
 if "eval_results" not in st.session_state:
     st.session_state.eval_results = None
-
-
-def _persist_watchlist() -> None:
-    config.save_watchlist(st.session_state.watchlist)
 
 
 # --------------------------------------------------------------------------- #
@@ -483,30 +479,9 @@ def _render_screener() -> None:
                     (st.session_state.screen_results or {}).get("results", [])
                 )
             st.session_state["screen_label"] = label
-
-    # --- Watchlist management (used by the Backtest tab) ---
-    with st.expander("Watchlist (used by Backtest)", expanded=False):
-        col_add, col_rm = st.columns([2, 2])
-        with col_add:
-            add_query = st.text_input("Add ticker or company name", placeholder="e.g. AAPL, Bell, Rogers")
-            if st.button("Add to watchlist"):
-                if add_query.strip():
-                    resolved = company.resolve(add_query.strip())
-                    if not resolved:
-                        st.warning(f"Couldn't find a ticker for '{add_query}'.")
-                    else:
-                        ticker = resolved["ticker"]
-                        if ticker not in st.session_state.watchlist:
-                            st.session_state.watchlist.append(ticker)
-                            _persist_watchlist()
-                        st.success(f"Added {ticker}" + (f" ({resolved['name']})" if resolved.get("name") else ""))
-        with col_rm:
-            if st.session_state.watchlist:
-                remove = st.multiselect("Remove tickers", st.session_state.watchlist, key="rm_tickers")
-                if st.button("Remove selected") and remove:
-                    st.session_state.watchlist = [t for t in st.session_state.watchlist if t not in remove]
-                    _persist_watchlist()
-        st.caption("Current: " + (", ".join(st.session_state.watchlist) or "empty"))
+            # The Backtest tab reuses this stock (no persisted watchlist).
+            st.session_state["screened_ticker"] = ticker
+            st.session_state["backtest_results"] = None
 
     results = st.session_state.screen_results
     if results is None:
@@ -545,13 +520,15 @@ def _render_screener() -> None:
 # --------------------------------------------------------------------------- #
 def _render_backtest() -> None:
     st.title("Backtest")
-    st.caption("Replays the momentum strategy over daily history with trading "
-               "costs, compared against buy-and-hold SPY. Rule-based only — Jev is "
-               "not replayed.")
+    st.caption("Replays the momentum strategy over the daily history of the stock "
+               "you screened, with trading costs, compared against buy-and-hold SPY. "
+               "Rule-based only — Jev is not replayed.")
 
-    if not st.session_state.watchlist:
-        st.warning("Watchlist is empty. Add tickers on the Screener tab first.")
+    ticker = st.session_state.get("screened_ticker")
+    if not ticker:
+        st.warning("Screen a stock on the Screener tab first, then come back to backtest it.")
         return
+    st.markdown(f"Backtesting **{ticker}** — the stock you screened on the Screener tab.")
 
     c1, c2, c3, c4 = st.columns(4)
     with c1:
@@ -579,7 +556,7 @@ def _render_backtest() -> None:
             "slippage_bps": slippage,
         }
         with st.spinner("Running backtest… (downloads history, can take ~30s)"):
-            st.session_state.backtest_results = backtest.run(st.session_state.watchlist, params)
+            st.session_state.backtest_results = backtest.run([ticker], params)
 
     result = st.session_state.backtest_results
     if result is None:
@@ -738,8 +715,9 @@ def _render_help() -> None:
         sidebar. The key is kept only for your session; leave it blank to use the
         server's key, if one is configured.
 
-        **Backtest** — replays the momentum strategy over history with trading
-        costs and compares it against buying SPY and doing nothing.
+        **Backtest** — replays the momentum strategy over the daily history of the
+        stock you screened, with trading costs, and compares it against buying SPY
+        and doing nothing.
 
         **Evaluate** — tests whether Jev's judgments actually improve on the plain
         momentum ranking. It needs ~20 trading days of forward history, so it
