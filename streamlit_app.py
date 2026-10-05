@@ -531,17 +531,17 @@ def _render_backtest() -> None:
 
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        years = st.number_input("Years", min_value=0.5, max_value=15.0, value=5.0, step=0.5)
-        top_k = st.number_input("Top K", min_value=1, max_value=10, value=2, step=1)
+        years = st.number_input("Years", min_value=0.5, max_value=15.0, value=5.0, step=0.5, width=120)
+        top_k = st.number_input("Top K", min_value=1, max_value=10, value=2, step=1, width=120)
     with c2:
-        rebalance = st.number_input("Rebalance (days)", min_value=1, max_value=60, value=5, step=1)
-        stop_loss = st.number_input("Stop-loss %", value=10.0, step=0.5)
+        rebalance = st.number_input("Rebalance (days)", min_value=1, max_value=60, value=5, step=1, width=120)
+        stop_loss = st.number_input("Stop-loss %", value=10.0, step=0.5, width=120)
     with c3:
-        take_profit = st.number_input("Take-profit %", value=25.0, step=0.5)
-        trailing = st.number_input("Trailing % (0=off)", value=0.0, step=0.5)
+        take_profit = st.number_input("Take-profit %", value=25.0, step=0.5, width=120)
+        trailing = st.number_input("Trailing % (0=off)", value=0.0, step=0.5, width=120)
     with c4:
-        commission = st.number_input("Commission bps", value=5.0, step=0.5)
-        slippage = st.number_input("Slippage bps", value=5.0, step=0.5)
+        commission = st.number_input("Commission bps", value=5.0, step=0.5, width=120)
+        slippage = st.number_input("Slippage bps", value=5.0, step=0.5, width=120)
 
     if st.button("Run backtest", type="primary"):
         params = {
