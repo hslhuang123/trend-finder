@@ -385,7 +385,7 @@ def _screener_table_html(results: list[dict], charts: dict | None = None) -> str
         )
         ai_cell = (
             f"<td class=\"ai-cell\"><span class=\"ai-badge {badge_cls(verdict)}\" "
-            f"data-tip=\"1\" data-name=\"Jev Analysis\" data-desc=\"{esc(tip)}\">"
+            f"data-tip=\"1\" data-name=\"AI Analysis\" data-desc=\"{esc(tip)}\">"
             f"{esc(verdict_label)}</span></td>"
         )
         row_cls = "row-discovered" if r.get("discovered") else ""
@@ -420,7 +420,7 @@ def _screener_table_html(results: list[dict], charts: dict | None = None) -> str
         "<th data-tip=\"1\" data-name=\"Vol×\" data-desc=\"Volume ratio: 5-day average volume divided by the 20-day average. Above 1 means busier than usual.\">Vol×</th>"
         "<th data-tip=\"1\" data-name=\"ATR %\" data-desc=\"Average True Range as a percent of price, a volatility measure. Higher means bigger swings.\">ATR %</th>"
         "<th data-tip=\"1\" data-name=\"Momentum\" data-desc=\"The app's technical score from 5-day return, distance above the 20-day average, volume and RSI, minus an ATR penalty. Roughly -1 to +1.\">Momentum</th>"
-        "<th data-tip=\"1\" data-name=\"AI\" data-desc=\"Jev's analysis. Hover (or tap) a row's AI badge to see Quality, Risk, Buy, Verdict and Final.\">AI</th>"
+        "<th data-tip=\"1\" data-name=\"AI\" data-desc=\"AI analysis. Hover (or tap) a row's AI badge to see Quality, Risk, Buy, Verdict and Final.\">AI</th>"
         "<th></th>"
         "</tr></thead>"
     )
@@ -568,7 +568,7 @@ def _render_screener() -> None:
         _screener_table_html(rows, st.session_state.get("screen_charts") or {}),
         height=height,
     )
-    st.caption("Hover the **AI** badge for Jev's analysis · hover a **ticker** for its chart · hover a **column heading** for what it means.")
+    st.caption("Hover the **AI** badge for the AI analysis · hover a **ticker** for its chart · hover a **column heading** for what it means.")
 
     # --- Chart ---
     st.subheader("Price chart")
