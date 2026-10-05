@@ -389,13 +389,15 @@ def _screener_table_html(results: list[dict], charts: dict | None = None) -> str
         rk_word = _risk_word(rk_raw)
         q_disp = f"{q} / 2" + (f" ({q_word})" if q_word else "")
         rk_disp = f"{rk} / 2" + (f" ({rk_word})" if rk_word else "")
+        q_note = "0 = weak, 2 = strong" if q_word else "how strong/clear the trend is"
+        rk_note = "0 = low, 2 = high (lower is safer)" if rk_word else "risk of buying now (lower is safer)"
         buy = "—"
         if j.get("is_buy_candidate") is not None:
             buy = f"{100 if j['is_buy_candidate'] else 0}%"
         final = _fmt_num(r.get("final_score"), 3)
         tip = (
-            f"Quality: {q_disp} — how strong/clear the trend is\n"
-            f"Risk: {rk_disp} — risk of buying now (lower = safer)\n"
+            f"Quality: {q_disp} — {q_note}\n"
+            f"Risk: {rk_disp} — {rk_note}\n"
             f"Buy: {buy} — confidence it's a good buy candidate\n"
             f"Verdict: {verdict_label} — overall call: buy now / watch / avoid\n"
             f"Final: {final} — momentum + AI score, used to rank"
@@ -718,6 +720,7 @@ def _render_help() -> None:
           1 = moderate, 0 = weak/choppy. Higher is better.
         - **Risk (0–2)** — the risk of buying at the current price. **0 = low**,
           1 = medium, 2 = high (extended/volatile). **Lower is safer.**
+          (Jev can land between levels, e.g. 1.4, so you'll see decimals.)
         - **Buy (0–100%)** — Jev's confidence this is a good buy candidate.
           100% = yes, 0% = no.
         - **Verdict** — the overall call: **buy now** → watch → avoid.
