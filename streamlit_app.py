@@ -359,7 +359,13 @@ def _screener_table_html(results: list[dict], charts: dict | None = None) -> str
         if j.get("is_buy_candidate") is not None:
             buy = f"{100 if j['is_buy_candidate'] else 0}%"
         final = _fmt_num(r.get("final_score"), 3)
-        tip = f"Quality: {q} / 2\nRisk: {rk} / 2\nBuy: {buy}\nVerdict: {verdict_label}\nFinal: {final}"
+        tip = (
+            f"Quality: {q} / 2 — how strong/clear the trend is\n"
+            f"Risk: {rk} / 2 — risk of buying now (lower = safer)\n"
+            f"Buy: {buy} — confidence it's a good buy candidate\n"
+            f"Verdict: {verdict_label} — overall call: buy now / watch / avoid\n"
+            f"Final: {final} — momentum + AI score, used to rank"
+        )
 
         marks = ""
         if r.get("pick"):
