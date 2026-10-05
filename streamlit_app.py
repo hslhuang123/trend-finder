@@ -25,7 +25,6 @@ from trendfinder import (
     company,
     config,
     decisions,
-    evaluate,
     market_data,
     screener,
 )
@@ -36,7 +35,7 @@ st.set_page_config(page_title="TrendFinder", layout="wide", page_icon="📈")
 # an empty OpenRouter box in the UI can fall back to it.
 _ENV_OPENROUTER_KEY = config.OPENROUTER_API_KEY
 
-# Make sure the decision-log tables exist (used by the screener + Evaluate tab).
+# Make sure the decision-log tables exist (used by the screener).
 decisions.init_db()
 
 
@@ -48,7 +47,9 @@ def _fmt_pct(v: float | None) -> str:
 
 
 def _fmt_money(v: float | None) -> str:
-    return "—" if v is None else f"${v:,.2f}"
+    if v is None or v != v:  # None or NaN
+        return "—"
+    return f"${v:,.2f}"
 
 
 def _fmt_market_cap(v: float | None, currency: str = "USD") -> str:
@@ -434,8 +435,6 @@ if "screened_ticker" not in st.session_state:
     st.session_state.screened_ticker = None
 if "backtest_results" not in st.session_state:
     st.session_state.backtest_results = None
-if "eval_results" not in st.session_state:
-    st.session_state.eval_results = None
 
 
 # --------------------------------------------------------------------------- #
@@ -604,98 +603,6 @@ def _render_backtest() -> None:
 
 
 # --------------------------------------------------------------------------- #
-# Evaluate tab
-# --------------------------------------------------------------------------- #
-def _render_evaluate() -> None:
-    st.title("Evaluate Jev")
-    st.caption("Measures whether Jev's judgments beat the rule-only momentum "
-               "ranking. Needs logged decisions with forward returns — stays nearly "
-               "empty until ~20 trading days pass after a screener run.")
-
-    top_k = st.number_input("Top K for ranking test", min_value=1, max_value=10,
-                            value=config.AUTO_PICK_COUNT, step=1)
-    if st.button("Refresh report", type="primary"):
-        with st.spinner("Building evaluation report…"):
-            st.session_state.eval_results = evaluate.evaluate(top_k=int(top_k))
-
-    report = st.session_state.eval_results
-    if report is None:
-        st.info("Press **Refresh report** to load the evaluation.")
-        return
-
-    ov = report.get("overview") or {}
-    cols = st.columns(6)
-    cols[0].metric("Total decisions", ov.get("total_entries", "—"))
-    cols[1].metric("Resolved", ov.get("resolved_entries", "—"))
-    cols[2].metric("Screen runs", ov.get("total_screen_runs", "—"))
-    cols[3].metric("Resolved runs", ov.get("resolved_screen_runs", "—"))
-    cols[4].metric("Auto-pick K", ov.get("auto_pick_count", "—"))
-    first = (ov.get("first_decision") or "")[:10]
-    last = (ov.get("last_decision") or "")[:10]
-    cols[5].metric("Data window", f"{first} → {last}" if first and last else "—")
-
-    # Entry verdicts
-    st.subheader("Entry verdicts")
-    verdicts = (report.get("entry_verdicts") or {}).get("verdict") or []
-    if verdicts:
-        vdf = pd.DataFrame(verdicts).rename(columns={
-            "label": "Verdict", "mean_forward_20d": "Mean 20d return", "n": "N"})
-        vdf["Mean 20d return"] = vdf["Mean 20d return"].apply(_fmt_pct)
-        st.dataframe(vdf, use_container_width=True, hide_index=True)
-    else:
-        st.info("No resolved entry decisions yet.")
-
-    # Buy candidate
-    st.subheader("Buy candidate")
-    buys = (report.get("entry_verdicts") or {}).get("is_buy_candidate") or []
-    if buys:
-        bdf = pd.DataFrame(buys).rename(columns={
-            "label": "Buy candidate", "mean_forward_20d": "Mean 20d return", "n": "N"})
-        bdf["Mean 20d return"] = bdf["Mean 20d return"].apply(_fmt_pct)
-        st.dataframe(bdf, use_container_width=True, hide_index=True)
-    else:
-        st.info("No resolved buy-candidate decisions yet.")
-
-    # Ranking test
-    st.subheader("Ranking test")
-    rs = (report.get("ranking") or {}).get("summary") or {}
-    cols = st.columns(3)
-    cols[0].metric("Final-score avg", _fmt_pct(rs.get("final_mean")))
-    cols[1].metric("Momentum avg", _fmt_pct(rs.get("momentum_mean")))
-    cols[2].metric("Diff (Final − Momentum)", _fmt_pct(rs.get("diff")))
-    runs = (report.get("ranking") or {}).get("runs") or []
-    if runs:
-        rdf = pd.DataFrame(runs)
-        rdf["final_mean"] = rdf["final_mean"].apply(_fmt_pct)
-        rdf["momentum_mean"] = rdf["momentum_mean"].apply(_fmt_pct)
-        rdf["diff"] = rdf["diff"].apply(_fmt_pct)
-        rdf = rdf.rename(columns={
-            "run_at": "Run", "k": "K", "final_mean": "Final avg",
-            "momentum_mean": "Momentum avg", "diff": "Diff"})
-        st.dataframe(rdf, use_container_width=True, hide_index=True)
-    else:
-        st.info("No resolved screen runs yet.")
-
-    # Calibration
-    st.subheader("Score calibration")
-    calib = report.get("calibration") or {}
-    rows = []
-    for key in ("risk_at_entry", "trend_quality", "momentum_sustainability"):
-        c = calib.get(key) or {}
-        rows.append({
-            "Score": c.get("field", key),
-            "Correlation": _fmt_num(c.get("corr"), 2),
-            "N": c.get("n", "—"),
-        })
-    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-
-    # Caveats
-    st.subheader("Caveats")
-    for caveat in report.get("caveats") or []:
-        st.markdown(f"- {caveat}")
-
-
-# --------------------------------------------------------------------------- #
 # Help tab
 # --------------------------------------------------------------------------- #
 def _render_help() -> None:
@@ -719,10 +626,6 @@ def _render_help() -> None:
         stock you screened, with trading costs, and compares it against buying SPY
         and doing nothing.
 
-        **Evaluate** — tests whether Jev's judgments actually improve on the plain
-        momentum ranking. It needs ~20 trading days of forward history, so it
-        starts nearly empty.
-
         **Jev** — an AI judgment layer that runs on **OpenRouter**. To enable it,
         paste your own OpenRouter API key in the sidebar (get one at
         [openrouter.ai/keys](https://openrouter.ai/keys)); it is kept only for your
@@ -742,7 +645,7 @@ def _render_help() -> None:
 def main() -> None:
     with st.sidebar:
         st.header("📈 TrendFinder")
-        page = st.radio("Navigation", ["Screener", "Backtest", "Evaluate", "Help"])
+        page = st.radio("Navigation", ["Screener", "Backtest", "Help"])
         theme_choice = st.radio("Theme", ["System", "Light", "Dark"], index=0, key="theme_choice")
         st.session_state["theme_mode"] = theme_choice.lower()
 
@@ -775,8 +678,6 @@ def main() -> None:
         _render_screener()
     elif page == "Backtest":
         _render_backtest()
-    elif page == "Evaluate":
-        _render_evaluate()
     else:
         _render_help()
 
