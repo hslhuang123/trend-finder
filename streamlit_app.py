@@ -9,7 +9,8 @@ Run locally:
     streamlit run streamlit_app.py
 
 Deploy: push to a repo, then on Streamlit Cloud point the main file at
-`streamlit_app.py` and set `OPENROUTER_API_KEY` as a secret.
+`streamlit_app.py`. No secret is required — users paste their own OpenRouter
+API key into the sidebar to enable Jev (the key is kept only for the session).
 """
 from __future__ import annotations
 
@@ -490,7 +491,7 @@ def _render_screener() -> None:
     if use_jev:
         st.caption("Jev is on — it will judge the entrants.")
     else:
-        st.caption("Jev is off — enter an OpenRouter key in the sidebar to enable it.")
+        st.caption("Jev is off — add your OpenRouter API key in the sidebar to enable it.")
 
     if st.button("Run screener", type="primary"):
         resolved = company.resolve(query.strip()) if query.strip() else {}
@@ -779,9 +780,12 @@ def _render_help() -> None:
         momentum ranking. It needs ~20 trading days of forward history, so it
         starts nearly empty.
 
-        **Jev** — an AI judgment layer. When an OpenRouter key is provided it
-        rates trend quality, entry risk, momentum sustainability, and buy
-        candidacy, then gives a verdict. It never buys or sells for you.
+        **Jev** — an AI judgment layer that runs on **OpenRouter**. To enable it,
+        paste your own OpenRouter API key in the sidebar (get one at
+        [openrouter.ai/keys](https://openrouter.ai/keys)); it is kept only for your
+        session. When enabled it rates trend quality, entry risk, momentum
+        sustainability, and buy candidacy, then gives a verdict. It never buys or
+        sells for you.
 
         **Caveats:** prices are delayed and free (yfinance); results are a heuristic,
         not a prediction; nothing here is investment advice.
@@ -801,20 +805,22 @@ def main() -> None:
 
         st.divider()
         st.subheader("Jev")
+        st.caption("Jev runs on **OpenRouter**. Paste your own OpenRouter API key "
+                   "below to enable it for this session.")
         st.text_input(
             "OpenRouter API key",
             type="password",
             key="openrouter_key",
-            placeholder="sk-or-… (enables Jev)",
-            help="Paste an OpenRouter key to enable Jev's judgments. "
-                 "Leave blank to use the server's key, if one is configured. "
-                 "The key is kept only in this session.",
+            placeholder="sk-or-v1-… (OpenRouter key)",
+            help="OpenRouter API key — the credential Jev uses to run. "
+                 "It is kept only for this browser session and never written to disk.",
         )
+        st.caption("Get an OpenRouter key at [openrouter.ai/keys](https://openrouter.ai/keys)")
         # Whatever is typed wins; otherwise fall back to the environment key.
         config.set_openrouter_api_key(
             st.session_state.get("openrouter_key", "").strip() or _ENV_OPENROUTER_KEY
         )
-        jev = "on" if config.has_jev() else "off — enter a key above"
+        jev = "on" if config.has_jev() else "off — add your OpenRouter key above"
         st.caption(f"Jev: {jev}")
         st.caption(f"Model: `{config.JEV_MODEL}`")
 

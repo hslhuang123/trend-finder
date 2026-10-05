@@ -27,15 +27,18 @@ For a full comparison of hosts, costs, and where the data lives, see
 
 Streamlit installs `requirements.txt` automatically.
 
-**Secret (optional but recommended):** the Jev layer needs an OpenRouter key. Add
-it under **Manage app → Settings → Secrets**:
+**OpenRouter key (no secret needed):** the Jev layer runs on **OpenRouter**.
+Users paste their **own** OpenRouter API key into the sidebar (get one at
+<https://openrouter.ai/keys>); it is kept only for their session and never
+written to disk. Without a key the app still runs, but the **Jev** judgment and
+the **Evaluate** tab stay off/empty.
+
+To instead enable a single server-wide key for everyone, add it under
+**Manage app → Settings → Secrets** (this is optional):
 
 ```toml
 OPENROUTER_API_KEY = "sk-or-v1-..."
 ```
-
-Without it the app still runs, but the **Jev** judgment and the **Evaluate** tab
-stay off/empty.
 
 ### Things to know
 
