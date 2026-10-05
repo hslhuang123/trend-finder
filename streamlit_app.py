@@ -580,9 +580,10 @@ def _render_screener() -> None:
 # --------------------------------------------------------------------------- #
 def _render_backtest() -> None:
     st.title("Backtest")
-    st.caption("Replays the momentum strategy over the daily history of the stock "
-               "you screened, with trading costs, compared against buy-and-hold SPY. "
-               "Rule-based only — Jev is not replayed.")
+    st.caption("Runs the momentum strategy over the past daily prices of the stock "
+               "you screened, including trading costs, and compares the result with "
+               "simply buying and holding SPY (the S&P 500). It uses only the "
+               "rule-based momentum signal — not the AI analysis.")
 
     tickers = st.session_state.get("screened_tickers")
     if not tickers:
@@ -693,9 +694,10 @@ def _render_help() -> None:
         sidebar. The key is kept only for your session; leave it blank to use the
         server's key, if one is configured.
 
-        **Backtest** — replays the momentum strategy over the daily history of the
-        stock you screened, with trading costs, and compares it against buying SPY
-        and doing nothing.
+        **Backtest** — runs the momentum strategy over the past daily prices of the
+        stock you screened, including trading costs, and compares the result with
+        simply buying and holding SPY (the S&P 500). It uses only the rule-based
+        momentum signal, not the AI analysis.
 
         **Jev** — an AI judgment layer that runs on **OpenRouter**. To enable it,
         paste your own OpenRouter API key in the sidebar (get one at
