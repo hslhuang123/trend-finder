@@ -87,11 +87,12 @@ a { color: #58a6ff !important; }
 [data-testid="stExpander"] details, [data-testid="stExpander"] summary { background-color: #161b22 !important; }
 [data-testid="stTextInput"] input, [data-testid="stNumberInput"] input, [data-testid="stSelectbox"], [data-testid="stMultiSelect"] { background-color: #1c232c !important; color: #e6edf3 !important; border-color: #2a323d !important; }
 [data-testid="stAlert"], [data-testid="stNotification"] { background-color: #1c232c !important; color: #e6edf3 !important; }
+[data-baseweb="tooltip"], [role="tooltip"], [data-testid="stTooltipContent"], [data-testid="stTooltipErrorContent"] { background-color: #1c232c !important; color: #e6edf3 !important; }
+[data-baseweb="tooltip"] *, [role="tooltip"] *, [data-testid="stTooltipContent"] *, [data-testid="stTooltipErrorContent"] * { color: #e6edf3 !important; }
 [data-testid="stSidebar"] .stRadio label, [data-testid="stSidebar"] .stRadio p { color: #e6edf3 !important; }
 """
 
 _LIGHT_RESET = """:root { color-scheme: light; }"""
-
 
 def _theme_css(mode: str) -> str:
     if mode == "dark":
