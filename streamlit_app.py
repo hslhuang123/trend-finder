@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import html as _html
 import json
+import re
 
 import pandas as pd
 import streamlit as st
@@ -431,8 +432,8 @@ if "screen_results" not in st.session_state:
     st.session_state.screen_results = None
 if "screen_charts" not in st.session_state:
     st.session_state.screen_charts = {}
-if "screened_ticker" not in st.session_state:
-    st.session_state.screened_ticker = None
+if "screened_tickers" not in st.session_state:
+    st.session_state.screened_tickers = None
 if "backtest_results" not in st.session_state:
     st.session_state.backtest_results = None
 
@@ -442,14 +443,17 @@ if "backtest_results" not in st.session_state:
 # --------------------------------------------------------------------------- #
 def _render_screener() -> None:
     st.title("Trending stocks")
-    st.caption("Screener — checks the stock you enter plus two freshly discovered "
+    st.caption("Screener — checks the stocks you enter plus two freshly discovered "
                "names, ranks them by momentum, and enriches them with Jev's judgment.")
 
-    # --- What to screen (a single ticker or company name) ---
+    # --- What to screen (one or more tickers / company names) ---
     query = st.text_input(
-        "Screen a ticker or company name",
-        placeholder="e.g. AAPL, Bell, Rogers",
+        "Screen one or more tickers or company names",
+        placeholder="e.g. AAPL, CVE.TO, Rogers  (separate with commas)",
         key="screen_query",
+        help="Enter one or more tickers or company names, separated by commas "
+             "(e.g. \"AAPL, CVE.TO, Rogers\"). The screener matches each one and "
+             "then adds two freshly discovered names.",
     )
     use_jev = config.has_jev()
     if use_jev:
@@ -458,18 +462,28 @@ def _render_screener() -> None:
         st.caption("Jev is off — add your OpenRouter API key in the sidebar to enable it.")
 
     if st.button("Run screener", type="primary"):
-        resolved = company.resolve(query.strip()) if query.strip() else {}
-        if not resolved:
+        tokens = [t.strip() for t in re.split(r"[,\n;]+", query) if t.strip()]
+        tickers: list[str] = []
+        missing: list[str] = []
+        for token in tokens:
+            resolved = company.resolve(token)
+            tk = resolved.get("ticker")
+            if tk and tk not in tickers:
+                tickers.append(tk)
+            elif not tk:
+                missing.append(token)
+        if not tickers:
             st.warning(
-                f"Couldn't find a ticker for '{query}'. "
-                "Try a symbol like AAPL or a company name like Rogers."
+                f"Couldn't find a ticker for: {', '.join(missing) or query}. "
+                "Try symbols like AAPL, CVE.TO, or names like Rogers."
             )
         else:
-            ticker = resolved["ticker"]
-            label = f"{ticker} ({resolved['name']})" if resolved.get("name") else ticker
+            if missing:
+                st.warning("Skipped (not found): " + ", ".join(missing))
+            label = ", ".join(tickers)
             with st.spinner(f"Screening {label} + 2 discovered… (Jev calls can take ~30s)"):
                 st.session_state.screen_results = screener.screen(
-                    use_jev=use_jev, watchlist=[ticker]
+                    use_jev=use_jev, watchlist=tickers
                 )
             # Precompute price history so the hover chart popup works (no API in the
             # iframe). Stored in session_state so it's not refetched on every rerun.
@@ -478,13 +492,13 @@ def _render_screener() -> None:
                     (st.session_state.screen_results or {}).get("results", [])
                 )
             st.session_state["screen_label"] = label
-            # The Backtest tab reuses this stock (no persisted watchlist).
-            st.session_state["screened_ticker"] = ticker
+            # The Backtest tab reuses these stocks (no persisted watchlist).
+            st.session_state["screened_tickers"] = tickers
             st.session_state["backtest_results"] = None
 
     results = st.session_state.screen_results
     if results is None:
-        st.info("Enter a ticker or company name above and press **Run screener**.")
+        st.info("Enter one or more tickers or company names above and press **Run screener**.")
         return
 
     meta = results
@@ -523,25 +537,34 @@ def _render_backtest() -> None:
                "you screened, with trading costs, compared against buy-and-hold SPY. "
                "Rule-based only — Jev is not replayed.")
 
-    ticker = st.session_state.get("screened_ticker")
-    if not ticker:
-        st.warning("Screen a stock on the Screener tab first, then come back to backtest it.")
+    tickers = st.session_state.get("screened_tickers")
+    if not tickers:
+        st.warning("Screen one or more stocks on the Screener tab first, then come back to backtest them.")
         return
-    st.markdown(f"Backtesting **{ticker}** — the stock you screened on the Screener tab.")
+    st.markdown(f"Backtesting **{', '.join(tickers)}** — the stock(s) you screened on the Screener tab.")
 
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        years = st.number_input("Years", min_value=0.5, max_value=15.0, value=5.0, step=0.5, width=120)
-        top_k = st.number_input("Top K", min_value=1, max_value=10, value=2, step=1, width=120)
+        years = st.number_input("Years", min_value=0.5, max_value=15.0, value=5.0, step=0.5, width=120,
+                                help="How many years of daily history to replay (0.5–15).")
+        top_k = st.number_input("Top K", min_value=1, max_value=10, value=2, step=1, width=120,
+                                help="How many of the best-ranked stocks to hold at once. "
+                                     "Position size = equity ÷ Top K; any unused slots stay in cash.")
     with c2:
-        rebalance = st.number_input("Rebalance (days)", min_value=1, max_value=60, value=5, step=1, width=120)
-        stop_loss = st.number_input("Stop-loss %", value=10.0, step=0.5, width=120)
+        rebalance = st.number_input("Rebalance (days)", min_value=1, max_value=60, value=5, step=1, width=120,
+                                    help="How often, in trading days, the strategy re-ranks and rotates holdings.")
+        stop_loss = st.number_input("Stop-loss %", value=10.0, step=0.5, width=120,
+                                    help="Sell a position if it falls this far below its entry price.")
     with c3:
-        take_profit = st.number_input("Take-profit %", value=25.0, step=0.5, width=120)
-        trailing = st.number_input("Trailing % (0=off)", value=0.0, step=0.5, width=120)
+        take_profit = st.number_input("Take-profit %", value=25.0, step=0.5, width=120,
+                                      help="Sell a position once it gains this far above its entry price.")
+        trailing = st.number_input("Trailing % (0=off)", value=0.0, step=0.5, width=120,
+                                   help="Sell if price drops this far from its peak since entry. 0 disables it.")
     with c4:
-        commission = st.number_input("Commission bps", value=5.0, step=0.5, width=120)
-        slippage = st.number_input("Slippage bps", value=5.0, step=0.5, width=120)
+        commission = st.number_input("Commission bps", value=5.0, step=0.5, width=120,
+                                     help="Commission per trade in basis points. 1 bp = 0.01%, so 5 bps = 0.05%.")
+        slippage = st.number_input("Slippage bps", value=5.0, step=0.5, width=120,
+                                   help="Assumed price slippage per trade in basis points. 1 bp = 0.01%.")
 
     if st.button("Run backtest", type="primary"):
         params = {
@@ -555,7 +578,7 @@ def _render_backtest() -> None:
             "slippage_bps": slippage,
         }
         with st.spinner("Running backtest… (downloads history, can take ~30s)"):
-            st.session_state.backtest_results = backtest.run([ticker], params)
+            st.session_state.backtest_results = backtest.run(tickers, params)
 
     result = st.session_state.backtest_results
     if result is None:
@@ -613,10 +636,11 @@ def _render_help() -> None:
         test a trading plan against history. Prices arrive late, and none of this
         is real advice.
 
-        **Screener** — enter a ticker or company name; it checks that stock plus a
-        couple of **discovered** names (🔍) from the wider market, ranks them by
-        momentum, and enriches them with **Jev's** judgment (trend quality, entry
-        risk, buy candidacy, and a verdict). Discovered names aren't saved.
+        **Screener** — enter one or more tickers or company names (separate them with
+        commas); it checks those plus a couple of **discovered** names (🔍) from the
+        wider market, ranks them by momentum, and enriches them with **Jev's**
+        judgment (trend quality, entry risk, buy candidacy, and a verdict).
+        Discovered names aren't saved.
 
         **Jev** — to enable Jev's judgments, paste an OpenRouter API key in the
         sidebar. The key is kept only for your session; leave it blank to use the
