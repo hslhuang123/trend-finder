@@ -68,7 +68,8 @@ def _final_score(momentum: float, jev: dict) -> float:
 
 def screen(use_jev: bool = True, top_n: int = 25, jev_top: int = 25,
            discover_count: int | None = None,
-           watchlist: list[str] | None = None) -> dict:
+           watchlist: list[str] | None = None,
+           discover_buy_only: bool = False) -> dict:
     if discover_count is None:
         discover_count = config.DISCOVER_COUNT
 
@@ -135,9 +136,14 @@ def screen(use_jev: bool = True, top_n: int = 25, jev_top: int = 25,
     results.sort(key=lambda x: x["final_score"], reverse=True)
 
     # Surface the discovered candidates with the HIGHEST RETURNS, but pick
-    # randomly from the top few so the surprises vary between runs.
+    # randomly from the top few so the surprises vary between runs. When
+    # discover_buy_only is set, keep only names Jev rated "buy now".
     pool_set = set(pool)
     pool_results = [r for r in results if r["ticker"] in pool_set]
+    if discover_buy_only:
+        pool_results = [
+            r for r in pool_results if (r.get("jev") or {}).get("verdict") == "buy_now"
+        ]
     pool_results.sort(key=lambda r: r["change_5d_pct"], reverse=True)
     top_returns = pool_results[: max(discover_count * 3, 6)]
     random.shuffle(top_returns)

@@ -479,7 +479,7 @@ if "backtest_results" not in st.session_state:
 def _render_screener() -> None:
     st.title("Trending stocks")
     st.caption("Screener — checks the stocks you enter plus a freshly discovered "
-               "name, ranks them by momentum, and enriches them with Jev's judgment.")
+               "'buy now' name, ranks them by momentum, and enriches them with Jev's judgment.")
 
     # --- What to screen (one or more tickers / company names) ---
     query = st.text_input(
@@ -488,7 +488,7 @@ def _render_screener() -> None:
         key="screen_query",
         help="Enter one or more tickers or company names, separated by commas "
              "(e.g. \"AAPL, CVE.TO, Rogers\"). The screener matches each one and "
-             "then adds a freshly discovered name.",
+             "then adds a freshly discovered name rated 'buy now'.",
     )
     use_jev = config.has_jev()
     if use_jev:
@@ -518,7 +518,8 @@ def _render_screener() -> None:
             label = ", ".join(tickers)
             with st.spinner(f"Screening {label} + 1 discovered… (Jev calls can take ~30s)"):
                 st.session_state.screen_results = screener.screen(
-                    use_jev=use_jev, watchlist=tickers, discover_count=1
+                    use_jev=use_jev, watchlist=tickers, discover_count=1,
+                    discover_buy_only=True,
                 )
             # Precompute price history so the hover chart popup works (no API in the
             # iframe). Stored in session_state so it's not refetched on every rerun.
@@ -543,24 +544,35 @@ def _render_screener() -> None:
                + (f" · {label}" if label else ""))
 
     picks = meta.get("picks", [])
-    discovered = meta.get("discovered", [])
     if picks:
         st.markdown("**Today's picks:** " + ", ".join(f"★ {p}" for p in picks))
-    if discovered:
-        st.markdown("**Discovered:** " + ", ".join(f"🔍 {d}" for d in discovered))
 
     rows = meta.get("results", [])
     if not rows:
         st.warning("No results — add tickers and run again.")
         return
 
+    charts = st.session_state.get("screen_charts") or {}
+    main_rows = [r for r in rows if not r.get("discovered")]
+    disc_rows = [r for r in rows if r.get("discovered")]
+
     # --- Table (with the Jev hover overlay + ticker chart popup + header tips) ---
-    height = min(150 + 42 * len(rows), 720)
-    st.iframe(
-        _screener_table_html(rows, st.session_state.get("screen_charts") or {}),
-        height=height,
-    )
+    height = min(150 + 42 * len(main_rows), 720)
+    st.iframe(_screener_table_html(main_rows, charts), height=height)
     st.caption("Hover the **AI** badge for the AI analysis · hover a **ticker** for its chart · hover a **column heading** for what it means.")
+
+    # --- Discovered table (a separate freshly-found 'buy now' name) ---
+    st.subheader("Discovered")
+    if disc_rows:
+        disc_height = min(150 + 42 * len(disc_rows), 720)
+        st.iframe(_screener_table_html(disc_rows, charts), height=disc_height)
+        st.caption("One freshly discovered name that Jev rated **buy now** — shown for this run only, never saved.")
+    else:
+        st.info(
+            "No 'buy now' discovered candidate this run."
+            if use_jev
+            else "No discovered 'buy now' candidate — enable Jev (add an OpenRouter key) so only buy-now names are surfaced."
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -672,8 +684,8 @@ def _render_help() -> None:
         is real advice.
 
         **Screener** — enter one or more tickers or company names (separate them with
-        commas); it checks those plus one **discovered** name (🔍) from the wider
-        market, ranks them by momentum, and enriches them with **Jev's**
+        commas); it checks those plus one **discovered** 'buy now' name (🔍) from the
+        wider market, ranks them by momentum, and enriches them with **Jev's**
         judgment (trend quality, entry risk, buy candidacy, and a verdict).
         Discovered names aren't saved.
 
