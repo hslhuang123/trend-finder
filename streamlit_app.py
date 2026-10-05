@@ -478,8 +478,8 @@ if "backtest_results" not in st.session_state:
 # --------------------------------------------------------------------------- #
 def _render_screener() -> None:
     st.title("Trending stocks")
-    st.caption("Screener — checks the stocks you enter plus two freshly discovered "
-               "names, ranks them by momentum, and enriches them with Jev's judgment.")
+    st.caption("Screener — checks the stocks you enter plus a freshly discovered "
+               "name, ranks them by momentum, and enriches them with Jev's judgment.")
 
     # --- What to screen (one or more tickers / company names) ---
     query = st.text_input(
@@ -488,7 +488,7 @@ def _render_screener() -> None:
         key="screen_query",
         help="Enter one or more tickers or company names, separated by commas "
              "(e.g. \"AAPL, CVE.TO, Rogers\"). The screener matches each one and "
-             "then adds two freshly discovered names.",
+             "then adds a freshly discovered name.",
     )
     use_jev = config.has_jev()
     if use_jev:
@@ -516,9 +516,9 @@ def _render_screener() -> None:
             if missing:
                 st.warning("Skipped (not found): " + ", ".join(missing))
             label = ", ".join(tickers)
-            with st.spinner(f"Screening {label} + 2 discovered… (Jev calls can take ~30s)"):
+            with st.spinner(f"Screening {label} + 1 discovered… (Jev calls can take ~30s)"):
                 st.session_state.screen_results = screener.screen(
-                    use_jev=use_jev, watchlist=tickers
+                    use_jev=use_jev, watchlist=tickers, discover_count=1
                 )
             # Precompute price history so the hover chart popup works (no API in the
             # iframe). Stored in session_state so it's not refetched on every rerun.
@@ -672,8 +672,8 @@ def _render_help() -> None:
         is real advice.
 
         **Screener** — enter one or more tickers or company names (separate them with
-        commas); it checks those plus a couple of **discovered** names (🔍) from the
-        wider market, ranks them by momentum, and enriches them with **Jev's**
+        commas); it checks those plus one **discovered** name (🔍) from the wider
+        market, ranks them by momentum, and enriches them with **Jev's**
         judgment (trend quality, entry risk, buy candidacy, and a verdict).
         Discovered names aren't saved.
 
