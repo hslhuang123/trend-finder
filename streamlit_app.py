@@ -398,7 +398,7 @@ def _screener_table_html(results: list[dict], charts: dict | None = None) -> str
         tip = (
             f"Quality: {q_disp} — {q_note}\n"
             f"Risk: {rk_disp} — {rk_note}\n"
-            f"Buy: {buy} — confidence it's a good buy candidate\n"
+            f"Buy: {buy} — qualifies as a buy candidate (no if risk is high)\n"
             f"Verdict: {verdict_label} — overall call: buy now / watch / avoid\n"
             f"Final: {final} — momentum + AI score, used to rank"
         )
@@ -721,9 +721,12 @@ def _render_help() -> None:
         - **Risk (0–2)** — the risk of buying at the current price. **0 = low**,
           1 = medium, 2 = high (extended/volatile). **Lower is safer.**
           (Jev can land between levels, e.g. 1.4, so you'll see decimals.)
-        - **Buy (0–100%)** — Jev's confidence this is a good buy candidate.
-          100% = yes, 0% = no.
-        - **Verdict** — the overall call: **buy now** → watch → avoid.
+        - **Buy (0–100%)** — whether the stock qualifies as a buy candidate.
+          100% = yes. Jev answers **no** when entry risk is high or the trend is weak,
+          and its Verdict then agrees (**avoid**).
+        - **Verdict** — the overall call: **buy now** → watch → avoid. It is
+          cross-checked with **Buy** so they can't contradict: no candidate →
+          **avoid**; otherwise **buy now** or **watch**.
         - **Final** — the combined momentum + AI score used to rank the list;
           higher ranks first.
 

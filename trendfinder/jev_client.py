@@ -71,19 +71,28 @@ def assess_trend(state: dict) -> dict | None:
         },
         "is_buy_candidate": {
             "type": "noul",
-            "instructions": "Is this a reasonable long buy candidate for a momentum approach right now?",
+            "instructions": (
+                "First decide whether this stock is a valid long buy candidate at "
+                "all: answer true if the trend is sound and entry risk is low or "
+                "medium; answer false if entry risk is high or the trend is weak. "
+                "Your verdict below must agree with this answer."
+            ),
             "criteria": {
-                "true": "Shows a clear upward trend with manageable risk",
-                "false": "Weak, too risky, or lacks a clear direction",
+                "true": "Sound trend and low/medium risk — a valid candidate",
+                "false": "High entry risk, or a weak/unclear trend",
             },
         },
         "verdict": {
             "type": "choice",
-            "instructions": "What is your overall verdict on this stock right now?",
+            "instructions": (
+                "Your overall call for this stock right now, and it must agree with "
+                "is_buy_candidate: if is_buy_candidate is false, choose 'avoid'; if "
+                "it is true, choose 'buy_now' for a good entry now, otherwise 'watch'."
+            ),
             "criteria": {
-                "buy_now": "A good moment to open a long position",
-                "watch": "Interesting but not yet a clear buy",
-                "avoid": "Unattractive or too risky right now",
+                "buy_now": "A valid candidate and a good moment to open a long position",
+                "watch": "A valid candidate, but not yet a clear buy or good entry",
+                "avoid": "Not a valid candidate — high risk or weak trend (is_buy_candidate is false)",
             },
         },
     })

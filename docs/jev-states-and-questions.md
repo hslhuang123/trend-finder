@@ -49,8 +49,16 @@ on top of the app's own momentum rules.
 | `trend_quality` | score | Weak: choppy/no direction · Moderate: trend w/ concerns · Strong: clear sustained trend w/ momentum |
 | `risk_at_entry` | score | Low: clean supported setup · Medium: chop/extension · High: extended/volatile/poorly supported |
 | `momentum_sustainability` | noul | true: trend+volume suggest continuation · false: momentum tired/extended/likely to reverse |
-| `is_buy_candidate` | noul | true: clear uptrend w/ manageable risk · false: weak/too risky/no direction |
+| `is_buy_candidate` | noul | true: sound trend + low/medium risk · false: high risk or weak trend |
 | `verdict` | choice | `buy_now` / `watch` / `avoid` |
+
+**Consistency rule:** `is_buy_candidate` and `verdict` are cross-checked so they
+cannot contradict. Jev first decides whether the stock is a valid candidate
+(trend sound, risk low/medium). Then: if it is **not** a candidate, the verdict
+must be `avoid`; if it **is**, the verdict is `buy_now` (good entry now) or
+`watch` (candidate, but not a clear buy yet). So `buy_now` always means a valid
+candidate, and `avoid` always means it is not one — a high-risk "watch + buy
+candidate" combination is no longer possible.
 
 ---
 
