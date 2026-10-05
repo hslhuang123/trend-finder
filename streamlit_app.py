@@ -99,6 +99,25 @@ def _risk_word(score: float | None) -> str:
     return "low"
 
 
+def _verdict_reason(verdict, quality, risk) -> str:
+    """A concise reason for Jev's verdict, derived from the quality/risk ratings."""
+    if verdict == "buy_now":
+        return "good trend, low/medium risk, clear entry"
+    if verdict == "watch":
+        if risk is not None and risk >= 1.5:
+            return "interesting, but entry risk is high"
+        if quality is not None and quality < 0.5:
+            return "trend is weak"
+        return "qualifies, but not a clear entry yet"
+    if verdict == "avoid":
+        if risk is not None and risk >= 1.5:
+            return "entry risk too high"
+        if quality is not None and quality < 0.5:
+            return "trend is weak"
+        return "not a good candidate"
+    return ""
+
+
 # --------------------------------------------------------------------------- #
 # Screener table as a custom HTML component (keeps the Jev hover overlay).
 # Embeds the exact same static/style.css as the Flask app so the table looks
@@ -403,14 +422,15 @@ def _screener_table_html(results: list[dict], charts: dict | None = None) -> str
         rk_note = "0 = low, 2 = high (lower is safer)" if rk_word else "risk of buying now (lower is safer)"
         buy = "—"
         if j.get("is_buy_candidate") is not None:
-            buy = f"{100 if j['is_buy_candidate'] else 0}%"
+            buy = "yes" if j["is_buy_candidate"] else "no"
         final = _fmt_num(r.get("final_score"), 3)
+        verdict_note = _verdict_reason(verdict, q_raw, rk_raw) or "overall call: buy now / watch / avoid"
         if j:
             tip = (
                 f"Quality: {q_disp} — {q_note}\n"
                 f"Risk: {rk_disp} — {rk_note}\n"
-                f"Buy: {buy} — qualifies as a buy candidate (no if risk is high)\n"
-                f"Verdict: {verdict_label} — overall call: buy now / watch / avoid\n"
+                f"Buy: {buy} — qualifies as a buy candidate? (no if risk is high or trend is weak)\n"
+                f"Verdict: {verdict_label} — {verdict_note}\n"
                 f"Final: {final} — overall ranking score (momentum + AI; higher is better)"
             )
             tip_title = "AI Analysis"
@@ -740,9 +760,10 @@ def _render_help() -> None:
         - **Risk (0–2)** — the risk of buying at the current price. **0 = low**,
           1 = medium, 2 = high (extended/volatile). **Lower is safer.**
           (Jev can land between levels, e.g. 1.4, so you'll see decimals.)
-        - **Buy (0–100%)** — whether the stock qualifies as a buy candidate.
-          100% = yes. Jev answers **no** when entry risk is high or the trend is weak,
-          and its Verdict then agrees (**avoid**).
+        - **Buy (yes/no)** — whether the stock qualifies as a buy candidate. **yes** = it
+          does; **no** = it doesn't (high risk or weak trend). It is cross-checked with
+          the Verdict so they can't contradict: **no** → **avoid**; **yes** → **buy now**
+          or **watch**.
         - **Verdict** — the overall call: **buy now** → watch → avoid. It is
           cross-checked with **Buy** so they can't contradict: no candidate →
           **avoid**; otherwise **buy now** or **watch**.
@@ -754,8 +775,8 @@ def _render_help() -> None:
           (+0.35 buy now / 0 watch / −0.45 avoid). The theoretical range is
           **−1.7…+2.0** (the ceiling is +2.0, and +0.9 without Jev).
 
-        Roughly: a strong setup is *Quality 2, Risk 0–1, Buy 100%, Verdict buy now*;
-        a weak one is *Quality 0–1, Risk 2, Buy 0%, Verdict avoid*. These are
+        Roughly: a strong setup is *Quality 2, Risk 0–1, Buy yes, Verdict buy now*;
+        a weak one is *Quality 0–1, Risk 2, Buy no, Verdict avoid*. These are
         opinions, not probabilities, and never place trades.
 
         **Screener table columns** (hover a column heading in the table for a short tip):
