@@ -566,7 +566,7 @@ def _render_screener() -> None:
                 st.session_state.screen_results = screener.screen(
                     use_jev=use_jev, watchlist=tickers, discover_count=1,
                     discover_buy_only=True, api_key=_session_api_key(),
-                    consistent_questions=True,
+                    consistent_questions=True, reconcile_answers=True,
                 )
             # Precompute price history so the hover chart popup works (no API in the
             # iframe). Stored in session_state so it's not refetched on every rerun.
@@ -767,6 +767,9 @@ def _render_help() -> None:
         - **Verdict** — the overall call: **buy now** → watch → avoid. It is
           cross-checked with **Buy** so they can't contradict: no candidate →
           **avoid**; otherwise **buy now** or **watch**.
+          If Jev answers inconsistently (e.g. "buy candidate: yes" on a weak trend),
+          the app reconciles Buy and Verdict from the Quality/Risk ratings so they
+          always agree.
         - **Final** — the app's overall ranking score, used to sort the table; higher
           ranks first. **Not** a probability or a predicted return. It is the technical
           **momentum** score (roughly −1…+0.9) plus the AI adjustments: **Quality

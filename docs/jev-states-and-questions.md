@@ -53,13 +53,16 @@ on top of the app's own momentum rules.
 | `verdict` | choice | `buy_now` / `watch` / `avoid` |
 
 **Consistency rule (Streamlit app only):** when the screener is called with
-`consistent_questions=True` (the Streamlit app does this), `is_buy_candidate` and
-`verdict` are cross-checked so they cannot contradict. Jev first decides whether
+`consistent_questions=True` **and** `reconcile_answers=True` (the Streamlit app
+does both), `is_buy_candidate` and `verdict` are cross-checked and then reconciled
+from the Quality/Risk ratings so they cannot contradict. Jev first decides whether
 the stock is a valid candidate (trend sound, risk low/medium). Then: if it is
-**not** a candidate, the verdict must be `avoid`; if it **is**, the verdict is
-`buy_now` (good entry now) or `watch` (candidate, but not a clear buy yet). The
-default (used by the Flask app) keeps the original, independent questions, so the
-Flask behaviour is unchanged.
+**not** a candidate, the verdict is `avoid`; if it **is**, the verdict is `buy_now`
+(good entry now) or `watch` (candidate, but not a clear buy yet). If Jev answers
+inconsistently (e.g. "buy candidate: yes" on a weak trend), the app overrides it
+to match the Quality/Risk ratings. The default (used by the Flask app) keeps the
+original, independent questions and raw answers, so the Flask behaviour is
+unchanged.
 
 ---
 

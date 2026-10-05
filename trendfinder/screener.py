@@ -54,6 +54,30 @@ def _extract_entry(answers: dict) -> dict:
     }
 
 
+def _reconcile_answers(extracted: dict) -> dict:
+    """Make `is_buy_candidate` and `verdict` agree with the quality/risk ratings.
+
+    The model sometimes contradicts itself (e.g. 'buy candidate: yes' on a weak
+    trend). This derives a single, consistent story from the actual ratings so the
+    displayed Buy and Verdict can never conflict, and the score matches.
+    """
+    quality = extracted.get("trend_quality")
+    risk = extracted.get("risk_at_entry")
+    weak_trend = quality is not None and quality < 0.5
+    high_risk = risk is not None and risk >= 1.5
+    if weak_trend or high_risk:
+        # Not a valid candidate: no candidate -> avoid.
+        extracted["is_buy_candidate"] = False
+        if extracted.get("verdict") in ("buy_now", "watch"):
+            extracted["verdict"] = "avoid"
+    else:
+        # Sound trend, low/medium risk: it IS a candidate.
+        extracted["is_buy_candidate"] = True
+        if extracted.get("verdict") == "avoid":
+            extracted["verdict"] = "watch"
+    return extracted
+
+
 def _final_score(momentum: float, jev: dict) -> float:
     return round(
         momentum
@@ -71,7 +95,8 @@ def screen(use_jev: bool = True, top_n: int = 25, jev_top: int = 25,
            watchlist: list[str] | None = None,
            discover_buy_only: bool = False,
            api_key: str | None = None,
-           consistent_questions: bool = False) -> dict:
+           consistent_questions: bool = False,
+           reconcile_answers: bool = False) -> dict:
     if discover_count is None:
         discover_count = config.DISCOVER_COUNT
 
@@ -130,6 +155,8 @@ def screen(use_jev: bool = True, top_n: int = 25, jev_top: int = 25,
         for (ticker, state, momentum), answer in zip(states, answers):
             if answer:
                 extracted = _extract_entry(answer)
+                if reconcile_answers:
+                    extracted = _reconcile_answers(extracted)
                 jev_by_ticker[ticker] = extracted
                 decisions.log_entry(state, answer, extracted, ticker, momentum)
 
