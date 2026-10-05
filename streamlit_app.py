@@ -816,8 +816,10 @@ def main() -> None:
                  "It is kept only for this browser session and never written to disk.",
         )
         st.caption("Get an OpenRouter key at [openrouter.ai/keys](https://openrouter.ai/keys)")
-        # Whatever is typed wins; otherwise fall back to the environment key.
-        config.set_openrouter_api_key(
+        # Set the OpenRouter key for this session. Assign the module attribute
+        # directly (rather than via a helper) so a stale cached copy of the
+        # config module can never break app startup.
+        config.OPENROUTER_API_KEY = (
             st.session_state.get("openrouter_key", "").strip() or _ENV_OPENROUTER_KEY
         )
         jev = "on" if config.has_jev() else "off — add your OpenRouter key above"
