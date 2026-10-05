@@ -732,8 +732,8 @@ def _render_help() -> None:
           **momentum** score (roughly −1…+0.9) plus the AI adjustments: **Quality
           +0.15 × value** (up to +0.30), **Risk −0.15 × value** (down to −0.30),
           **Buy candidate +0.25**, **momentum sustainability +0.20**, and **Verdict**
-          (+0.35 buy now / 0 watch / −0.45 avoid). The range is roughly **−1.8…+2.1**.
-          Without Jev (no key), Final equals momentum alone.
+          (+0.35 buy now / 0 watch / −0.45 avoid). The theoretical range is
+          **−1.7…+2.0** (the ceiling is +2.0, and +0.9 without Jev).
 
         Roughly: a strong setup is *Quality 2, Risk 0–1, Buy 100%, Verdict buy now*;
         a weak one is *Quality 0–1, Risk 2, Buy 0%, Verdict avoid*. These are
