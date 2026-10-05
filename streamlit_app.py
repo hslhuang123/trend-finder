@@ -758,6 +758,54 @@ def _render_help() -> None:
         a weak one is *Quality 0–1, Risk 2, Buy 0%, Verdict avoid*. These are
         opinions, not probabilities, and never place trades.
 
+        **Screener table columns** (hover a column heading in the table for a short tip):
+
+        - **#** — rank, best Final score first.
+        - **Ticker** — the stock symbol. Hover it for the company name and a price chart.
+        - **Price** — latest (delayed) closing price.
+        - **Market cap** — total value of the company = share price × shares outstanding.
+        - **1d %** — (price ÷ previous close − 1) × 100.
+        - **5d %** — (price ÷ price 5 trading days ago − 1) × 100.
+        - **RSI** — 14-day Relative Strength Index, 0–100: RSI = 100 − 100 ÷ (1 + RS),
+          where RS = average gain ÷ average loss over 14 days (≥ 70 overbought,
+          ≤ 30 oversold, ~50 neutral).
+        - **Vol×** — volume ratio = 5-day average volume ÷ 20-day average volume; above
+          1 means busier than usual.
+        - **ATR %** — 14-day Average True Range as a % of price = ATR(14) ÷ price × 100;
+          a volatility measure (higher = bigger swings).
+        - **Momentum** — the app's technical score (roughly −1…+0.9). Each factor is
+          clamped to −1…+1, then combined: **0.30 × (5d return ÷ 10) + 0.25 × (% above
+          the 20-day average ÷ 5) + 0.20 × ((volume ratio − 1) ÷ 2) + 0.15 × ((RSI − 50)
+          ÷ 25) − 0.10 × (ATR% ÷ 10, floored at 0)**.
+        - **AI** — the AI's judgment. Hover the badge for Quality, Risk, Buy, Verdict and
+          Final (see "How to read the AI analysis" above).
+
+        **Backtest summary**
+
+        - **Final value** — ending portfolio value = cash + shares × price.
+        - **Total return** — (final value ÷ starting value − 1) × 100 (starting value = $100,000).
+        - **CAGR** — compound annual growth rate = (final ÷ starting)^(1 ÷ years) − 1,
+          where years = calendar days ÷ 365.25.
+        - **Sharpe** — return per unit of risk = mean daily return ÷ daily volatility × √252
+          (252 ≈ trading days per year); ~1 is decent, higher is better.
+        - **Max drawdown** — worst peak-to-trough drop = the lowest value of
+          (value − running peak) ÷ running peak, × 100.
+        - **Trades** — number of fills (buys + sells).
+        - **Benchmark (SPY)** — the same window if you had simply bought and held SPY,
+          starting from $100,000.
+
+        **Backtest trades table**
+
+        - **date** — the trading day of the fill.
+        - **ticker** — the symbol traded.
+        - **side** — buy or sell.
+        - **reason** — entry, take-profit, stop-loss, trailing-stop, or rebalance.
+        - **price** — execution price (that day's close).
+        - **shares** — number of shares traded.
+        - **value** — trade amount: buy = shares × price + fees; sell = shares × price − costs.
+        - **pnl** — realized profit/loss on a sell = (exit price × (1 − cost) − entry price ×
+          (1 + cost)) × shares, where cost = (commission + slippage) ÷ 10,000; shows — on buys.
+
         **Caveats:** prices are delayed and free (yfinance); results are a heuristic,
         not a prediction; nothing here is investment advice.
         """
