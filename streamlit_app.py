@@ -400,7 +400,7 @@ def _screener_table_html(results: list[dict], charts: dict | None = None) -> str
             f"Risk: {rk_disp} — {rk_note}\n"
             f"Buy: {buy} — qualifies as a buy candidate (no if risk is high)\n"
             f"Verdict: {verdict_label} — overall call: buy now / watch / avoid\n"
-            f"Final: {final} — momentum + AI score, used to rank"
+            f"Final: {final} — overall ranking score (momentum + AI; higher is better)"
         )
 
         marks = ""
@@ -727,8 +727,13 @@ def _render_help() -> None:
         - **Verdict** — the overall call: **buy now** → watch → avoid. It is
           cross-checked with **Buy** so they can't contradict: no candidate →
           **avoid**; otherwise **buy now** or **watch**.
-        - **Final** — the combined momentum + AI score used to rank the list;
-          higher ranks first.
+        - **Final** — the app's overall ranking score, used to sort the table; higher
+          ranks first. **Not** a probability or a predicted return. It is the technical
+          **momentum** score (roughly −1…+0.9) plus the AI adjustments: **Quality
+          +0.15 × value** (up to +0.30), **Risk −0.15 × value** (down to −0.30),
+          **Buy candidate +0.25**, **momentum sustainability +0.20**, and **Verdict**
+          (+0.35 buy now / 0 watch / −0.45 avoid). The range is roughly **−1.8…+2.1**.
+          Without Jev (no key), Final equals momentum alone.
 
         Roughly: a strong setup is *Quality 2, Risk 0–1, Buy 100%, Verdict buy now*;
         a weak one is *Quality 0–1, Risk 2, Buy 0%, Verdict avoid*. These are
