@@ -538,6 +538,7 @@ def _render_screener() -> None:
                 st.session_state.screen_results = screener.screen(
                     use_jev=use_jev, watchlist=tickers, discover_count=1,
                     discover_buy_only=True, api_key=_session_api_key(),
+                    consistent_questions=True,
                 )
             # Precompute price history so the hover chart popup works (no API in the
             # iframe). Stored in session_state so it's not refetched on every rerun.

@@ -70,7 +70,8 @@ def screen(use_jev: bool = True, top_n: int = 25, jev_top: int = 25,
            discover_count: int | None = None,
            watchlist: list[str] | None = None,
            discover_buy_only: bool = False,
-           api_key: str | None = None) -> dict:
+           api_key: str | None = None,
+           consistent_questions: bool = False) -> dict:
     if discover_count is None:
         discover_count = config.DISCOVER_COUNT
 
@@ -121,7 +122,10 @@ def screen(use_jev: bool = True, top_n: int = 25, jev_top: int = 25,
                   for _, r in df.head(jev_top).iterrows()]
         with ThreadPoolExecutor(max_workers=6) as pool_exec:
             answers = list(pool_exec.map(
-                lambda item: jev_client.assess_trend(item[1], api_key=effective_key), states
+                lambda item: jev_client.assess_trend(
+                    item[1], api_key=effective_key,
+                    consistent=consistent_questions,
+                ), states
             ))
         for (ticker, state, momentum), answer in zip(states, answers):
             if answer:

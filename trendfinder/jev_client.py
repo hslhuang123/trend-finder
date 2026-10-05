@@ -45,8 +45,61 @@ def _ask(state: dict, questions: dict, api_key: str | None = None) -> dict | Non
     return data if isinstance(data, dict) else None
 
 
-def assess_trend(state: dict, api_key: str | None = None) -> dict | None:
-    """Entry-side: is this a good stock to buy right now?"""
+def assess_trend(state: dict, api_key: str | None = None,
+                 consistent: bool = False) -> dict | None:
+    """Entry-side: is this a good stock to buy right now?
+
+    When `consistent` is True (used by the Streamlit app), the `is_buy_candidate`
+    and `verdict` questions are cross-checked so they cannot contradict. The
+    default (False) keeps the original, independent questions so the Flask app is
+    unchanged.
+    """
+    if consistent:
+        is_buy_candidate = {
+            "type": "noul",
+            "instructions": (
+                "First decide whether this stock is a valid long buy candidate at "
+                "all: answer true if the trend is sound and entry risk is low or "
+                "medium; answer false if entry risk is high or the trend is weak. "
+                "Your verdict below must agree with this answer."
+            ),
+            "criteria": {
+                "true": "Sound trend and low/medium risk — a valid candidate",
+                "false": "High entry risk, or a weak/unclear trend",
+            },
+        }
+        verdict = {
+            "type": "choice",
+            "instructions": (
+                "Your overall call for this stock right now, and it must agree with "
+                "is_buy_candidate: if is_buy_candidate is false, choose 'avoid'; if "
+                "it is true, choose 'buy_now' for a good entry now, otherwise 'watch'."
+            ),
+            "criteria": {
+                "buy_now": "A valid candidate and a good moment to open a long position",
+                "watch": "A valid candidate, but not yet a clear buy or good entry",
+                "avoid": "Not a valid candidate — high risk or weak trend (is_buy_candidate is false)",
+            },
+        }
+    else:
+        is_buy_candidate = {
+            "type": "noul",
+            "instructions": "Is this a reasonable long buy candidate for a momentum approach right now?",
+            "criteria": {
+                "true": "Shows a clear upward trend with manageable risk",
+                "false": "Weak, too risky, or lacks a clear direction",
+            },
+        }
+        verdict = {
+            "type": "choice",
+            "instructions": "What is your overall verdict on this stock right now?",
+            "criteria": {
+                "buy_now": "A good moment to open a long position",
+                "watch": "Interesting but not yet a clear buy",
+                "avoid": "Unattractive or too risky right now",
+            },
+        }
+
     return _ask(state, {
         "trend_quality": {
             "type": "score",
@@ -74,32 +127,8 @@ def assess_trend(state: dict, api_key: str | None = None) -> dict | None:
                 "false": "Momentum looks tired, extended, or likely to reverse",
             },
         },
-        "is_buy_candidate": {
-            "type": "noul",
-            "instructions": (
-                "First decide whether this stock is a valid long buy candidate at "
-                "all: answer true if the trend is sound and entry risk is low or "
-                "medium; answer false if entry risk is high or the trend is weak. "
-                "Your verdict below must agree with this answer."
-            ),
-            "criteria": {
-                "true": "Sound trend and low/medium risk — a valid candidate",
-                "false": "High entry risk, or a weak/unclear trend",
-            },
-        },
-        "verdict": {
-            "type": "choice",
-            "instructions": (
-                "Your overall call for this stock right now, and it must agree with "
-                "is_buy_candidate: if is_buy_candidate is false, choose 'avoid'; if "
-                "it is true, choose 'buy_now' for a good entry now, otherwise 'watch'."
-            ),
-            "criteria": {
-                "buy_now": "A valid candidate and a good moment to open a long position",
-                "watch": "A valid candidate, but not yet a clear buy or good entry",
-                "avoid": "Not a valid candidate — high risk or weak trend (is_buy_candidate is false)",
-            },
-        },
+        "is_buy_candidate": is_buy_candidate,
+        "verdict": verdict,
     }, api_key=api_key)
 
 
