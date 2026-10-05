@@ -32,6 +32,16 @@ def has_jev() -> bool:
     return bool(OPENROUTER_API_KEY)
 
 
+def set_openrouter_api_key(key: str | None) -> None:
+    """Override the OpenRouter key at runtime (e.g. a key typed into the UI).
+
+    Pass an empty/None value to fall back to whatever the environment provided.
+    The key is only held in memory for the current process.
+    """
+    global OPENROUTER_API_KEY
+    OPENROUTER_API_KEY = (key or "").strip()
+
+
 def load_watchlist() -> list[str]:
     if not WATCHLIST_PATH.exists():
         return []

@@ -67,11 +67,17 @@ def _final_score(momentum: float, jev: dict) -> float:
 
 
 def screen(use_jev: bool = True, top_n: int = 25, jev_top: int = 25,
-           discover_count: int | None = None) -> dict:
+           discover_count: int | None = None,
+           watchlist: list[str] | None = None) -> dict:
     if discover_count is None:
         discover_count = config.DISCOVER_COUNT
 
-    watchlist = config.load_watchlist()
+    # Screen only the tickers we're asked about (a single typed ticker/name in
+    # the Streamlit UI), or the persisted watchlist when none is supplied.
+    if watchlist is None:
+        watchlist = config.load_watchlist()
+    else:
+        watchlist = [str(t).upper().strip() for t in watchlist if str(t).strip()]
 
     # Discover a pool of 'surprise' candidates (never persisted).
     pool: list[str] = []

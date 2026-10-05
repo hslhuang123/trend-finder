@@ -31,6 +31,10 @@ from trendfinder import (
 
 st.set_page_config(page_title="TrendFinder", layout="wide", page_icon="📈")
 
+# Remember any key supplied through the environment (e.g. Streamlit secrets) so
+# an empty OpenRouter box in the UI can fall back to it.
+_ENV_OPENROUTER_KEY = config.OPENROUTER_API_KEY
+
 # Make sure the decision-log tables exist (used by the screener + Evaluate tab).
 decisions.init_db()
 
@@ -473,19 +477,53 @@ def _render_screener_chart(results: list[dict]) -> None:
 
 def _render_screener() -> None:
     st.title("Trending stocks")
-    st.caption("Screener — ranks the watchlist by momentum, enriches the top names "
-               "with Jev's judgment, and auto-picks the best.")
+    st.caption("Screener — checks the stock you enter plus two freshly discovered "
+               "names, ranks them by momentum, and enriches them with Jev's judgment.")
 
-    # --- Watchlist management ---
-    with st.expander("Watchlist", expanded=False):
+    # --- What to screen (a single ticker or company name) ---
+    query = st.text_input(
+        "Screen a ticker or company name",
+        placeholder="e.g. AAPL, Bell, Rogers",
+        key="screen_query",
+    )
+    use_jev = config.has_jev()
+    if use_jev:
+        st.caption("Jev is on — it will judge the entrants.")
+    else:
+        st.caption("Jev is off — enter an OpenRouter key in the sidebar to enable it.")
+
+    if st.button("Run screener", type="primary"):
+        resolved = company.resolve(query.strip()) if query.strip() else {}
+        if not resolved:
+            st.warning(
+                f"Couldn't find a ticker for '{query}'. "
+                "Try a symbol like AAPL or a company name like Rogers."
+            )
+        else:
+            ticker = resolved["ticker"]
+            label = f"{ticker} ({resolved['name']})" if resolved.get("name") else ticker
+            with st.spinner(f"Screening {label} + 2 discovered… (Jev calls can take ~30s)"):
+                st.session_state.screen_results = screener.screen(
+                    use_jev=use_jev, watchlist=[ticker]
+                )
+            # Precompute price history so the hover chart popup works (no API in the
+            # iframe). Stored in session_state so it's not refetched on every rerun.
+            with st.spinner("Preparing charts…"):
+                st.session_state.screen_charts = _precompute_chart_data(
+                    (st.session_state.screen_results or {}).get("results", [])
+                )
+            st.session_state["screen_label"] = label
+
+    # --- Watchlist management (used by the Backtest tab) ---
+    with st.expander("Watchlist (used by Backtest)", expanded=False):
         col_add, col_rm = st.columns([2, 2])
         with col_add:
-            query = st.text_input("Add ticker or company name", placeholder="e.g. AAPL, Bell, Rogers")
+            add_query = st.text_input("Add ticker or company name", placeholder="e.g. AAPL, Bell, Rogers")
             if st.button("Add to watchlist"):
-                if query.strip():
-                    resolved = company.resolve(query.strip())
+                if add_query.strip():
+                    resolved = company.resolve(add_query.strip())
                     if not resolved:
-                        st.warning(f"Couldn't find a ticker for '{query}'.")
+                        st.warning(f"Couldn't find a ticker for '{add_query}'.")
                     else:
                         ticker = resolved["ticker"]
                         if ticker not in st.session_state.watchlist:
@@ -500,28 +538,16 @@ def _render_screener() -> None:
                     _persist_watchlist()
         st.caption("Current: " + (", ".join(st.session_state.watchlist) or "empty"))
 
-    # --- Run controls ---
-    use_jev = st.checkbox("Use Jev", value=config.has_jev(), disabled=not config.has_jev())
-    if not config.has_jev():
-        st.caption("Jev is disabled — set OPENROUTER_API_KEY to enable it.")
-    if st.button("Run screener", type="primary"):
-        with st.spinner("Screening… (Jev calls can take ~30s)"):
-            st.session_state.screen_results = screener.screen(use_jev=use_jev)
-        # Precompute price history so the hover chart popup works (no API in the
-        # iframe). Stored in session_state so it's not refetched on every rerun.
-        with st.spinner("Preparing charts…"):
-            st.session_state.screen_charts = _precompute_chart_data(
-                (st.session_state.screen_results or {}).get("results", [])
-            )
-
     results = st.session_state.screen_results
     if results is None:
-        st.info("Press **Run screener** to rank your watchlist.")
+        st.info("Enter a ticker or company name above and press **Run screener**.")
         return
 
     meta = results
+    label = st.session_state.get("screen_label", "")
     st.success(f"Scanned {meta.get('scanned', 0)} tickers at {meta.get('generated_at')} "
-               f"· Jev {'on' if meta.get('jev_enabled') else 'off'}")
+               f"· Jev {'on' if meta.get('jev_enabled') else 'off'}"
+               + (f" · {label}" if label else ""))
 
     picks = meta.get("picks", [])
     discovered = meta.get("discovered", [])
@@ -737,10 +763,14 @@ def _render_help() -> None:
         test a trading plan against history. Prices arrive late, and none of this
         is real advice.
 
-        **Screener** — ranks the stocks you're watching by momentum, enriches the
-        top names with **Jev's** judgment (trend quality, entry risk, buy candidacy,
-        and a verdict), and auto-picks the best. A couple of **discovered** names
-        (🔍) from the wider market appear each run but aren't saved.
+        **Screener** — enter a ticker or company name; it checks that stock plus a
+        couple of **discovered** names (🔍) from the wider market, ranks them by
+        momentum, and enriches them with **Jev's** judgment (trend quality, entry
+        risk, buy candidacy, and a verdict). Discovered names aren't saved.
+
+        **Jev** — to enable Jev's judgments, paste an OpenRouter API key in the
+        sidebar. The key is kept only for your session; leave it blank to use the
+        server's key, if one is configured.
 
         **Backtest** — replays the momentum strategy over history with trading
         costs and compares it against buying SPY and doing nothing.
@@ -749,8 +779,9 @@ def _render_help() -> None:
         momentum ranking. It needs ~20 trading days of forward history, so it
         starts nearly empty.
 
-        **Jev** is a stateless decision model that gives advice only. It never buys
-        or sells for you.
+        **Jev** — an AI judgment layer. When an OpenRouter key is provided it
+        rates trend quality, entry risk, momentum sustainability, and buy
+        candidacy, then gives a verdict. It never buys or sells for you.
 
         **Caveats:** prices are delayed and free (yfinance); results are a heuristic,
         not a prediction; nothing here is investment advice.
@@ -767,7 +798,23 @@ def main() -> None:
         page = st.radio("Navigation", ["Screener", "Backtest", "Evaluate", "Help"])
         theme_choice = st.radio("Theme", ["System", "Light", "Dark"], index=0, key="theme_choice")
         st.session_state["theme_mode"] = theme_choice.lower()
-        jev = "on" if config.has_jev() else "off (no API key)"
+
+        st.divider()
+        st.subheader("Jev")
+        st.text_input(
+            "OpenRouter API key",
+            type="password",
+            key="openrouter_key",
+            placeholder="sk-or-… (enables Jev)",
+            help="Paste an OpenRouter key to enable Jev's judgments. "
+                 "Leave blank to use the server's key, if one is configured. "
+                 "The key is kept only in this session.",
+        )
+        # Whatever is typed wins; otherwise fall back to the environment key.
+        config.set_openrouter_api_key(
+            st.session_state.get("openrouter_key", "").strip() or _ENV_OPENROUTER_KEY
+        )
+        jev = "on" if config.has_jev() else "off — enter a key above"
         st.caption(f"Jev: {jev}")
         st.caption(f"Model: `{config.JEV_MODEL}`")
 
