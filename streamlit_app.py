@@ -67,6 +67,28 @@ def _fmt_num(v: float | None, digits: int = 2) -> str:
     return "—" if v is None else f"{v:.{digits}f}"
 
 
+def _quality_word(score: float | None) -> str:
+    """Plain-English label for Jev's 0-2 trend-quality score."""
+    if score is None:
+        return ""
+    if score >= 1.5:
+        return "strong"
+    if score >= 0.5:
+        return "moderate"
+    return "weak"
+
+
+def _risk_word(score: float | None) -> str:
+    """Plain-English label for Jev's 0-2 entry-risk score (higher = riskier)."""
+    if score is None:
+        return ""
+    if score >= 1.5:
+        return "high"
+    if score >= 0.5:
+        return "medium"
+    return "low"
+
+
 # --------------------------------------------------------------------------- #
 # Screener table as a custom HTML component (keeps the Jev hover overlay).
 # Embeds the exact same static/style.css as the Flask app so the table looks
@@ -353,15 +375,21 @@ def _screener_table_html(results: list[dict], charts: dict | None = None) -> str
         co = r.get("company") or {}
         verdict = j.get("verdict")
         verdict_label = (verdict or "—").replace("_", " ")
-        q = _fmt_num(j.get("trend_quality"), 1) if j.get("trend_quality") is not None else "—"
-        rk = _fmt_num(j.get("risk_at_entry"), 1) if j.get("risk_at_entry") is not None else "—"
+        q_raw = j.get("trend_quality")
+        rk_raw = j.get("risk_at_entry")
+        q = _fmt_num(q_raw, 1) if q_raw is not None else "—"
+        rk = _fmt_num(rk_raw, 1) if rk_raw is not None else "—"
+        q_word = _quality_word(q_raw)
+        rk_word = _risk_word(rk_raw)
+        q_disp = f"{q} / 2" + (f" ({q_word})" if q_word else "")
+        rk_disp = f"{rk} / 2" + (f" ({rk_word})" if rk_word else "")
         buy = "—"
         if j.get("is_buy_candidate") is not None:
             buy = f"{100 if j['is_buy_candidate'] else 0}%"
         final = _fmt_num(r.get("final_score"), 3)
         tip = (
-            f"Quality: {q} / 2 — how strong/clear the trend is\n"
-            f"Risk: {rk} / 2 — risk of buying now (lower = safer)\n"
+            f"Quality: {q_disp} — how strong/clear the trend is\n"
+            f"Risk: {rk_disp} — risk of buying now (lower = safer)\n"
             f"Buy: {buy} — confidence it's a good buy candidate\n"
             f"Verdict: {verdict_label} — overall call: buy now / watch / avoid\n"
             f"Final: {final} — momentum + AI score, used to rank"
@@ -663,6 +691,22 @@ def _render_help() -> None:
         session. When enabled it rates trend quality, entry risk, momentum
         sustainability, and buy candidacy, then gives a verdict. It never buys or
         sells for you.
+
+        **How to read the AI analysis** (hover the **AI** badge in the screener table):
+
+        - **Quality (0–2)** — how clear and sustained the uptrend is. **2 = strong**,
+          1 = moderate, 0 = weak/choppy. Higher is better.
+        - **Risk (0–2)** — the risk of buying at the current price. **0 = low**,
+          1 = medium, 2 = high (extended/volatile). **Lower is safer.**
+        - **Buy (0–100%)** — Jev's confidence this is a good buy candidate.
+          100% = yes, 0% = no.
+        - **Verdict** — the overall call: **buy now** → watch → avoid.
+        - **Final** — the combined momentum + AI score used to rank the list;
+          higher ranks first.
+
+        Roughly: a strong setup is *Quality 2, Risk 0–1, Buy 100%, Verdict buy now*;
+        a weak one is *Quality 0–1, Risk 2, Buy 0%, Verdict avoid*. These are
+        opinions, not probabilities, and never place trades.
 
         **Caveats:** prices are delayed and free (yfinance); results are a heuristic,
         not a prediction; nothing here is investment advice.
