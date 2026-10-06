@@ -330,6 +330,32 @@ function renderChartPopup(chartEl, raw) {
   const end = svgEl('text', { x: W - padR, y: H - 4, class: 'axis', 'text-anchor': 'end' });
   end.textContent = shortDate(points[n - 1].date); svg.appendChild(end);
   chartEl.appendChild(svg);
+
+  // Crosshair: vertical dashed line + price/date label following the pointer.
+  const guide = svgEl('line', { y1: padT, y2: H - padB, stroke: '#8b949e', 'stroke-width': 1, 'stroke-dasharray': '3 3', visibility: 'hidden', 'pointer-events': 'none' });
+  const dot = svgEl('circle', { r: 3, fill: color, stroke: '#0d1117', 'stroke-width': 1, visibility: 'hidden', 'pointer-events': 'none' });
+  const lblBg = svgEl('rect', { rx: 3, height: 15, fill: '#0d1117', stroke: '#30363d', visibility: 'hidden', 'pointer-events': 'none' });
+  const lbl = svgEl('text', { y: padT + 10, fill: '#e6edf3', 'font-size': 9, visibility: 'hidden', 'pointer-events': 'none' });
+  svg.append(guide, dot, lblBg, lbl);
+  const hide = () => [guide, dot, lblBg, lbl].forEach((el) => el.setAttribute('visibility', 'hidden'));
+  svg.addEventListener('mouseleave', hide);
+  svg.addEventListener('mousemove', (e) => {
+    const r = svg.getBoundingClientRect();
+    const vx = ((e.clientX - r.left) / r.width) * W;
+    let i = Math.round(((vx - padL) / (W - padL - padR)) * (n - 1));
+    i = Math.max(0, Math.min(n - 1, i));
+    const px = x(i), py = y(points[i].price);
+    guide.setAttribute('x1', px); guide.setAttribute('x2', px);
+    dot.setAttribute('cx', px); dot.setAttribute('cy', py);
+    const d = String(points[i].date);
+    const when = d.length > 10 ? (chartRange === '1d' ? d.slice(11, 16) : d.slice(5, 16)) : d;
+    lbl.textContent = points[i].price.toFixed(2) + '  ' + when;
+    const w = lbl.getComputedTextLength() + 8;
+    const lx = Math.max(padL, Math.min(W - padR - w, px - w / 2));
+    lblBg.setAttribute('x', lx); lblBg.setAttribute('y', padT - 3); lblBg.setAttribute('width', w);
+    lbl.setAttribute('x', lx + 4);
+    [guide, dot, lblBg, lbl].forEach((el) => el.setAttribute('visibility', 'visible'));
+  });
 }
 
 // ---- hover handling ----
