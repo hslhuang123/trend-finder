@@ -188,7 +188,7 @@ def _load_static_css() -> str:
 
 _SCREENER_JS = """
 const TF = window.TF_DATA || {};
-const CHART_RANGES = ['1m', '3m', '6m', '1y'];
+const CHART_RANGES = ['1d', '5d', '1m', '3m', '6m', '1y'];
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const tooltip = document.getElementById('tf-tip');
 let tipTarget = null;
@@ -211,7 +211,11 @@ function fmtPrice(v) {
   if (v >= 10) return v.toFixed(0);
   return v.toFixed(2);
 }
-function shortDate(s) { return String(s).length > 10 ? String(s).slice(5, 10) : String(s); }
+function shortDate(s) {
+  s = String(s);
+  if (s.length <= 10) return s;
+  return chartRange === '1d' ? s.slice(11, 16) : s.slice(5, 10);
+}
 
 // ---- tooltip (column headers, AI badge, cp-ticker) ----
 function positionTip(x, y) {
@@ -291,8 +295,10 @@ function loadChart() {
   const popup = getChartPopup();
   const chartEl = popup.querySelector('.cp-chart');
   const statusEl = popup.querySelector('.cp-status');
-  const all = (TF.charts && TF.charts[chartTicker]) || [];
-  const pts = sliceRange(all, chartRange);
+  const entry = (TF.charts && TF.charts[chartTicker]) || {};
+  const pts = (chartRange === '1d' || chartRange === '5d')
+    ? (entry[chartRange] || [])
+    : sliceRange(entry.daily || [], chartRange);
   if (statusEl) statusEl.textContent = pts.length ? pts.length + ' points' : 'No data';
   renderChartPopup(chartEl, pts);
 }
@@ -378,14 +384,20 @@ def _precompute_chart_data(results: list[dict]) -> dict:
     if not tickers:
         return charts
     from concurrent.futures import ThreadPoolExecutor
+    specs = {"daily": ("1y", "1d"), "1d": ("1d", "5m"), "5d": ("5d", "15m")}
+
+    def fetch(t):
+        return t, {
+            k: [[p["date"], p["price"]]
+                for p in market_data.fetch_price_history(t, period=per, interval=iv)]
+            for k, (per, iv) in specs.items()
+        }
+
     with ThreadPoolExecutor(max_workers=8) as ex:
-        pairs = list(ex.map(
-            lambda t: (t, market_data.fetch_price_history(t, period="1y", interval="1d")),
-            tickers,
-        ))
-    for ticker, points in pairs:
-        if points:
-            charts[ticker] = [[p["date"], p["price"]] for p in points]
+        pairs = list(ex.map(fetch, tickers))
+    for ticker, entry in pairs:
+        if any(entry.values()):
+            charts[ticker] = entry
     return charts
 
 
