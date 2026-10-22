@@ -141,6 +141,17 @@ a { color: #58a6ff !important; }
 [data-testid="stAlert"], [data-testid="stNotification"] { background-color: #1c232c !important; color: #e6edf3 !important; }
 [data-baseweb="tooltip"], [role="tooltip"], [data-testid="stTooltipContent"], [data-testid="stTooltipErrorContent"] { background-color: #1c232c !important; color: #e6edf3 !important; }
 [data-baseweb="tooltip"] *, [role="tooltip"] *, [data-testid="stTooltipContent"] *, [data-testid="stTooltipErrorContent"] * { color: #e6edf3 !important; }
+/* Selectbox control + its dropdown list (rendered in a portal outside the app container). */
+[data-baseweb="select"] > div { background-color: #1c232c !important; border-color: #2a323d !important; }
+[data-baseweb="select"] *, [data-baseweb="select"] input { color: #e6edf3 !important; -webkit-text-fill-color: #e6edf3 !important; }
+[data-baseweb="popover"] > div, [data-baseweb="menu"], ul[role="listbox"] { background-color: #1c232c !important; border-color: #2a323d !important; }
+[data-baseweb="popover"] li, [data-baseweb="popover"] li * , li[role="option"], li[role="option"] * { background-color: transparent !important; color: #e6edf3 !important; }
+[data-baseweb="popover"] li:hover, li[role="option"]:hover, li[role="option"][aria-selected="true"] { background-color: #2a323d !important; }
+/* Newer Streamlit (react-aria) selectbox: control and virtual dropdown portal. */
+[data-testid="stSelectbox"] div[data-rac], [data-testid="stSelectbox"] input { background-color: #1c232c !important; color: #e6edf3 !important; -webkit-text-fill-color: #e6edf3 !important; border-color: #2a323d !important; }
+[data-testid="stSelectboxVirtualDropdown"] { background-color: #1c232c !important; border: 1px solid #2a323d !important; }
+[data-testid="stSelectboxVirtualDropdown"] [role="option"], [data-testid="stSelectboxVirtualDropdown"] [role="option"] * { background-color: transparent !important; color: #e6edf3 !important; }
+[data-testid="stSelectboxVirtualDropdown"] [role="option"]:hover, [data-testid="stSelectboxVirtualDropdown"] [role="option"][data-focused="true"], [data-testid="stSelectboxVirtualDropdown"] [role="option"][data-selected="true"] { background-color: #2a323d !important; }
 [data-testid="stSidebar"] .stRadio label, [data-testid="stSidebar"] .stRadio p { color: #e6edf3 !important; }
 """
 
