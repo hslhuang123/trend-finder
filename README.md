@@ -23,7 +23,9 @@ A stock **screener + backtester** for US and Canadian markets, with optional
   North America only); a **Best performers over** dropdown (1 day, 5 days,
   1 month by default, 3 months) sets the period used to rank that exchange's
   names. Periods longer than a day rank the exchange's 250 most-traded names in
-  the band. The market-cap band applies in that listing's own currency.
+  the band. The market-cap band applies in that listing's own currency. The
+  ticker box can be left empty to run discovery alone (without Jev the pick is
+  simply the exchange's top performer, not AI-vetted).
 - **Jev's entry judgment** — judges each top candidate's **trend quality**,
   **entry risk**, **momentum sustainability**, **buy candidacy**, and an overall
   **verdict** (buy now / watch / avoid), blended into the final score.

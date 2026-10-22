@@ -631,7 +631,7 @@ def _render_screener() -> None:
                 tickers.append(tk)
             elif not tk:
                 missing.append(token)
-        if not tickers:
+        if tokens and not tickers:
             st.warning(
                 f"Couldn't find a ticker for: {', '.join(missing) or query}. "
                 "Try symbols like AAPL, CVE.TO, or names like Rogers."
@@ -639,11 +639,17 @@ def _render_screener() -> None:
         else:
             if missing:
                 st.warning("Skipped (not found): " + ", ".join(missing))
-            label = ", ".join(tickers)
-            with st.spinner(f"Screening {label} + 1 discovered from {exchange}… (Jev calls can take ~30s)"):
+            # With nothing typed, run discovery alone.
+            label = ", ".join(tickers) or "discovery only"
+            spinner = (
+                f"Screening {label} + 1 discovered from {exchange}… (Jev calls can take ~30s)"
+                if tickers else
+                f"Discovering from {exchange}… (Jev calls can take ~30s)"
+            )
+            with st.spinner(spinner):
                 st.session_state.screen_results = screener.screen(
                     use_jev=use_jev, watchlist=tickers, discover_count=1,
-                    discover_buy_only=True, discover_exchange=exchange,
+                    discover_buy_only=use_jev, discover_exchange=exchange,
                     discover_window=window,
                     api_key=_session_api_key(),
                     consistent_questions=True, reconcile_answers=True,
@@ -655,13 +661,17 @@ def _render_screener() -> None:
                     (st.session_state.screen_results or {}).get("results", [])
                 )
             st.session_state["screen_label"] = label
-            # The Backtest tab reuses these stocks (no persisted watchlist).
-            st.session_state["screened_tickers"] = tickers
+            # The Backtest tab reuses these stocks (no persisted watchlist); in a
+            # discovery-only run that is the discovered name.
+            st.session_state["screened_tickers"] = (
+                tickers or (st.session_state.screen_results or {}).get("discovered") or []
+            )
             st.session_state["backtest_results"] = None
 
     results = st.session_state.screen_results
     if results is None:
-        st.info("Enter one or more tickers or company names above and press **Run screener**.")
+        st.info("Enter tickers or company names above (optional) and press **Run screener**. "
+                "Leave the box empty to run discovery only.")
         return
 
     meta = results
@@ -676,7 +686,7 @@ def _render_screener() -> None:
 
     rows = meta.get("results", [])
     if not rows:
-        st.warning("No results — add tickers and run again.")
+        st.warning("No results — try another exchange or period, or enter tickers.")
         return
 
     charts = st.session_state.get("screen_charts") or {}
@@ -684,21 +694,26 @@ def _render_screener() -> None:
     disc_rows = [r for r in rows if r.get("discovered")]
 
     # --- Table (with the Jev hover overlay + ticker chart popup + header tips) ---
-    height = min(150 + 42 * len(main_rows), 720)
-    st.iframe(_screener_table_html(main_rows, charts), height=height)
-    st.caption("Hover the **AI** badge for the AI analysis · hover a **ticker** for its chart · hover a **column heading** for what it means.")
+    if main_rows:
+        height = min(150 + 42 * len(main_rows), 720)
+        st.iframe(_screener_table_html(main_rows, charts), height=height)
+        st.caption("Hover the **AI** badge for the AI analysis · hover a **ticker** for its chart · hover a **column heading** for what it means.")
 
     # --- Discovered table (a separate freshly-found 'buy now' name) ---
     st.subheader("Discovered")
     if disc_rows:
         disc_height = min(150 + 42 * len(disc_rows), 720)
         st.iframe(_screener_table_html(disc_rows, charts), height=disc_height)
-        st.caption("One freshly discovered name that Jev rated **buy now** — shown for this run only, never saved.")
+        st.caption(
+            "One freshly discovered name that Jev rated **buy now** — shown for this run only, never saved."
+            if meta.get("jev_enabled") else
+            "One freshly discovered top performer (not AI-vetted — Jev is off) — shown for this run only, never saved."
+        )
     else:
         st.info(
             "No 'buy now' discovered candidate this run."
-            if use_jev
-            else "No discovered 'buy now' candidate — enable Jev (add an OpenRouter key) so only buy-now names are surfaced."
+            if meta.get("jev_enabled")
+            else "No discovered candidate this run — try another exchange or period."
         )
 
 
