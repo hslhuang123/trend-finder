@@ -69,14 +69,20 @@ def enrich(tickers: list[str]) -> dict[str, dict]:
         return {}
 
     cache = _load_cache()
-    # Refetch entries that predate a newly added field (e.g. market_cap).
-    missing = [t for t in tickers if t not in cache or "market_cap" not in cache[t]]
+    # Refetch entries that predate a newly added field (e.g. market_cap) and
+    # entries cached empty by an earlier failed fetch (rate limit / network).
+    missing = [
+        t for t in tickers
+        if t not in cache or "market_cap" not in cache[t] or not cache[t].get("description")
+    ]
 
     if missing:
         with ThreadPoolExecutor(max_workers=8) as pool:
             fetched = list(pool.map(_fetch_one, missing))
         for ticker, profile in zip(missing, fetched):
-            cache[ticker] = profile
+            # Never overwrite a good cached profile with an empty (failed) one.
+            if profile["description"] or ticker not in cache:
+                cache[ticker] = profile
         _save_cache(cache)
 
     return {

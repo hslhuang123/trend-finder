@@ -94,6 +94,7 @@ def screen(use_jev: bool = True, top_n: int = 25, jev_top: int = 25,
            discover_count: int | None = None,
            watchlist: list[str] | None = None,
            discover_buy_only: bool = False,
+           discover_exchange: str | None = None,
            api_key: str | None = None,
            consistent_questions: bool = False,
            reconcile_answers: bool = False) -> dict:
@@ -116,7 +117,8 @@ def screen(use_jev: bool = True, top_n: int = 25, jev_top: int = 25,
     if discover_count > 0:
         try:
             pool = discover.discover_candidates(
-                limit=max(discover_count * 5, 12), exclude=watchlist
+                limit=max(discover_count * 5, 12), exclude=watchlist,
+                exchange=discover_exchange,
             )
         except Exception as exc:  # noqa: BLE001
             print(f"[discover] failed: {exc}")

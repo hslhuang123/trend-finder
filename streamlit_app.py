@@ -26,6 +26,7 @@ from trendfinder import (
     company,
     config,
     decisions,
+    discover,
     market_data,
     screener,
 )
@@ -192,7 +193,7 @@ const CHART_RANGES = ['1d', '5d', '1m', '3m', '6m', '1y'];
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const tooltip = document.getElementById('tf-tip');
 let tipTarget = null;
-let chartPopup = null, chartTicker = null, chartRange = '6m', hideChartTimer = null;
+let chartPopup = null, chartTicker = null, chartRange = '6m', hideChartTimer = null, chartPinned = false;
 const isTouch = window.matchMedia && window.matchMedia('(hover: none)').matches;
 
 function svgEl(tag, attrs) {
@@ -282,7 +283,7 @@ function showChartPopup(ticker, name, desc, x, y) {
   positionChartPopup(x, y);
   loadChart();
 }
-function hideChartPopup() { clearTimeout(hideChartTimer); if (chartPopup) chartPopup.classList.remove('show'); chartTicker = null; }
+function hideChartPopup() { clearTimeout(hideChartTimer); if (chartPopup) chartPopup.classList.remove('show'); chartTicker = null; chartPinned = false; }
 function scheduleHideChartPopup() { clearTimeout(hideChartTimer); hideChartTimer = setTimeout(hideChartPopup, 250); }
 function cancelHideChartPopup() { clearTimeout(hideChartTimer); }
 
@@ -370,6 +371,7 @@ document.addEventListener('mouseover', (e) => {
     return;
   }
   if (chartPopup && chartPopup.contains(e.target)) {
+    chartPinned = true;
     cancelHideChartPopup();
     const tt = e.target.closest && e.target.closest('[data-tip]');
     if (tt) showTip(tt, e.clientX, e.clientY);
@@ -380,26 +382,34 @@ document.addEventListener('mouseover', (e) => {
 });
 document.addEventListener('mouseout', (e) => {
   if (isTouch) return;
-  if (e.target.closest && e.target.closest('.ticker')) scheduleHideChartPopup();
-  if (chartPopup && chartPopup.contains(e.target)) scheduleHideChartPopup();
+  // A popup the pointer has entered is pinned: leaving it does not close it.
+  if (!chartPinned && e.target.closest && e.target.closest('.ticker')) scheduleHideChartPopup();
   if (e.target.closest && e.target.closest('[data-tip]')) hideTip();
 });
 document.addEventListener('mousemove', (e) => { if (!isTouch && tipTarget) positionTip(e.clientX, e.clientY); });
 document.addEventListener('click', (e) => {
-  if (!isTouch) return;
+  // Clicks inside the popup (range buttons, chart) never close it; only its X does.
+  if (chartPopup && chartPopup.contains(e.target)) { if (chartPopup.classList.contains('show')) chartPinned = true; return; }
   const tickerEl = e.target.closest && e.target.closest('.ticker');
   if (tickerEl) {
     const t = tickerEl.dataset.ticker;
-    if (chartTicker === t && chartPopup && chartPopup.classList.contains('show')) hideChartPopup();
-    else showChartPopup(t, tickerEl.dataset.name, tickerEl.dataset.desc, e.clientX || window.innerWidth / 2, e.clientY || 80);
+    const open = chartTicker === t && chartPopup && chartPopup.classList.contains('show');
+    if (isTouch && open) { hideChartPopup(); return; }
+    if (!open) showChartPopup(t, tickerEl.dataset.name, tickerEl.dataset.desc, e.clientX || window.innerWidth / 2, e.clientY || 80);
+    chartPinned = true;
     return;
   }
+  // Click outside the popup closes it.
+  hideChartPopup();
+  if (!isTouch) return;
   const target = e.target.closest && e.target.closest('[data-tip]');
-  if (!target) { hideChartPopup(); hideTip(); return; }
+  if (!target) { hideTip(); return; }
   if (tipTarget === target && tooltip.classList.contains('show')) hideTip();
   else showTip(target, e.clientX || window.innerWidth / 2, e.clientY || 80);
 });
-window.addEventListener('scroll', () => { hideTip(); hideChartPopup(); }, true);
+// Clicking outside the iframe (rest of the Streamlit page) blurs this window.
+window.addEventListener('blur', hideChartPopup);
+window.addEventListener('scroll', () => { hideTip(); if (!chartPinned) hideChartPopup(); }, true);
 """
 
 
@@ -574,6 +584,15 @@ def _render_screener() -> None:
              "(e.g. \"AAPL, CVE.TO, Rogers\"). The screener matches each one and "
              "then adds a freshly discovered name rated 'buy now'.",
     )
+    exchange = st.selectbox(
+        "Discover from exchange",
+        list(discover.EXCHANGES),
+        index=list(discover.EXCHANGES).index(discover.DEFAULT_EXCHANGE),
+        key="discover_exchange",
+        help="The freshly discovered name is picked from the top gainers on this exchange "
+             "(North America only), limited to mid-cap companies ($2B–$10B market cap, "
+             "in the listing's own currency).",
+    )
     use_jev = bool(_session_api_key())
     if use_jev:
         st.caption("Jev is on — it will judge the entrants.")
@@ -600,10 +619,11 @@ def _render_screener() -> None:
             if missing:
                 st.warning("Skipped (not found): " + ", ".join(missing))
             label = ", ".join(tickers)
-            with st.spinner(f"Screening {label} + 1 discovered… (Jev calls can take ~30s)"):
+            with st.spinner(f"Screening {label} + 1 discovered from {exchange}… (Jev calls can take ~30s)"):
                 st.session_state.screen_results = screener.screen(
                     use_jev=use_jev, watchlist=tickers, discover_count=1,
-                    discover_buy_only=True, api_key=_session_api_key(),
+                    discover_buy_only=True, discover_exchange=exchange,
+                    api_key=_session_api_key(),
                     consistent_questions=True, reconcile_answers=True,
                 )
             # Precompute price history so the hover chart popup works (no API in the
@@ -771,7 +791,8 @@ def _render_help() -> None:
 
         **Screener** — enter one or more tickers or company names (separate them with
         commas); it checks those plus one **discovered** 'buy now' name (🔍) from the
-        wider market, ranks them by momentum, and enriches them with **Jev's**
+        **exchange you pick** in the *Discover from exchange* dropdown (TSX by default;
+        also TSXV, NASDAQ, NYSE, NYSE American), ranks them by momentum, and enriches them with **Jev's**
         judgment (trend quality, entry risk, buy candidacy, and a verdict).
         Discovered names aren't saved.
 
