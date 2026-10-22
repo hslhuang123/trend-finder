@@ -595,14 +595,24 @@ def _render_screener() -> None:
              "(e.g. \"AAPL, CVE.TO, Rogers\"). The screener matches each one and "
              "then adds a freshly discovered name rated 'buy now'.",
     )
-    exchange = st.selectbox(
+    col_exchange, col_window = st.columns(2)
+    exchange = col_exchange.selectbox(
         "Discover from exchange",
         list(discover.EXCHANGES),
         index=list(discover.EXCHANGES).index(discover.DEFAULT_EXCHANGE),
         key="discover_exchange",
-        help="The freshly discovered name is picked from the top gainers on this exchange "
-             "(North America only), limited to mid-cap companies ($2B–$10B market cap, "
-             "in the listing's own currency).",
+        help="The discovered name comes from this exchange (North America only), "
+             "limited to mid-cap companies ($2B–$10B market cap, in the listing's "
+             "own currency).",
+    )
+    window = col_window.selectbox(
+        "Best performers over",
+        list(discover.PERFORMANCE_WINDOWS),
+        index=list(discover.PERFORMANCE_WINDOWS).index(discover.DEFAULT_WINDOW),
+        key="discover_window",
+        help="Discovery ranks the exchange's names by their return over this period. "
+             "Longer periods look at the exchange's 250 most-traded mid-cap names and "
+             "take a few seconds more.",
     )
     use_jev = bool(_session_api_key())
     if use_jev:
@@ -634,6 +644,7 @@ def _render_screener() -> None:
                 st.session_state.screen_results = screener.screen(
                     use_jev=use_jev, watchlist=tickers, discover_count=1,
                     discover_buy_only=True, discover_exchange=exchange,
+                    discover_window=window,
                     api_key=_session_api_key(),
                     consistent_questions=True, reconcile_answers=True,
                 )
@@ -803,7 +814,9 @@ def _render_help() -> None:
         **Screener** — enter one or more tickers or company names (separate them with
         commas); it checks those plus one **discovered** 'buy now' name (🔍) from the
         **exchange you pick** in the *Discover from exchange* dropdown (TSX by default;
-        also TSXV, NASDAQ, NYSE, NYSE American), ranks them by momentum, and enriches them with **Jev's**
+        also TSXV, NASDAQ, NYSE, NYSE American) and ranks that exchange's mid-caps by their
+        return over the period in *Best performers over* (1 day, 5 days, 1 month by default,
+        or 3 months); it then ranks everything by momentum and enriches it with **Jev's**
         judgment (trend quality, entry risk, buy candidacy, and a verdict).
         Discovered names aren't saved.
 

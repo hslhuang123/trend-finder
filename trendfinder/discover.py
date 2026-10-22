@@ -75,11 +75,47 @@ EXCHANGES: dict[str, tuple[str, ...]] = {
 }
 DEFAULT_EXCHANGE = "Toronto Stock Exchange (TSX)"
 
+# Look-back windows (label -> trading days) for ranking an exchange's gainers.
+PERFORMANCE_WINDOWS: dict[str, int] = {
+    "1 day": 1,
+    "5 days": 5,
+    "1 month": 21,
+    "3 months": 63,
+}
+DEFAULT_WINDOW = "1 month"
 
-def _from_exchange(exchange: str, count: int = 50,
+# Yahoo's screener can only sort by the 1-day change, so for longer windows we
+# take the most-traded names in the band and rank them by their own price history.
+_UNIVERSE_SIZE = 250  # Yahoo's per-request maximum
+
+
+def _window_returns(symbols: list[str], window_days: int) -> dict[str, float]:
+    """Total return over the last `window_days` trading days, per symbol."""
+    from .market_data import _close_series_for  # local import: market_data is heavy
+
+    data = yf.download(
+        symbols, period="6mo", interval="1d", group_by="ticker",
+        auto_adjust=True, progress=False, threads=True,
+    )
+    out: dict[str, float] = {}
+    for symbol in symbols:
+        close = _close_series_for(data, symbol)
+        if close is None or len(close) <= window_days:
+            continue
+        start = float(close.iloc[-(window_days + 1)])
+        if start > 0:
+            out[symbol] = float(close.iloc[-1]) / start - 1.0
+    return out
+
+
+def _from_exchange(exchange: str, window_days: int = 1,
                    min_market_cap: float = 0.0,
                    max_market_cap: float = 0.0) -> list[str]:
-    """Top one-day gainers listed on `exchange`, inside the market-cap band."""
+    """Best performers over `window_days` listed on `exchange`, best first.
+
+    Candidates are restricted to the market-cap band. A 1-day window uses
+    Yahoo's own sort; longer windows rank the most-traded names by price history.
+    """
     codes = EXCHANGES[exchange]
     clauses = [
         yf.EquityQuery("eq", ["exchange", codes[0]])
@@ -92,31 +128,42 @@ def _from_exchange(exchange: str, count: int = 50,
         clauses.append(yf.EquityQuery("gte", ["intradaymarketcap", min_market_cap]))
     elif max_market_cap:
         clauses.append(yf.EquityQuery("lte", ["intradaymarketcap", max_market_cap]))
+
+    one_day = window_days <= 1
     try:
         result = yf.screen(
             yf.EquityQuery("and", clauses),
-            sortField="percentchange", sortAsc=False, size=count,
+            sortField="percentchange" if one_day else "avgdailyvol3m",
+            sortAsc=False,
+            size=50 if one_day else _UNIVERSE_SIZE,
         )
+        quotes = result.get("quotes", []) if isinstance(result, dict) else []
+        symbols = [q["symbol"] for q in quotes if _valid(q.get("symbol"), q.get("quoteType"))]
+        if one_day or not symbols:
+            return symbols
+        returns = _window_returns(symbols, window_days)
     except Exception as exc:  # noqa: BLE001 - discovery must never break the screener
         print(f"[discover] exchange '{exchange}' screen failed: {exc}")
         return []
-
-    quotes = result.get("quotes", []) if isinstance(result, dict) else []
-    return [q["symbol"] for q in quotes if _valid(q.get("symbol"), q.get("quoteType"))]
+    return sorted(returns, key=returns.get, reverse=True)
 
 
 def discover_candidates(limit: int = 8, exclude=None,
                         min_market_cap: float | None = None,
                         max_market_cap: float | None = None,
-                        exchange: str | None = None) -> list[str]:
-    """Return up to `limit` random mid-cap tickers not in `exclude`.
+                        exchange: str | None = None,
+                        window: str = DEFAULT_WINDOW) -> list[str]:
+    """Return up to `limit` mid-cap tickers not in `exclude`.
 
     With `exchange` (a key of EXCHANGES) candidates are restricted to that
-    exchange and there is no cross-exchange fallback; otherwise they come from
-    the general market screeners.
+    exchange, ranked best-first by their return over `window` (a key of
+    PERFORMANCE_WINDOWS), with no cross-exchange fallback. Otherwise they are a
+    random sample from the general market screeners.
     """
     if exchange is not None and exchange not in EXCHANGES:
         raise ValueError(f"Unknown exchange {exchange!r}; choose from {list(EXCHANGES)}")
+    if window not in PERFORMANCE_WINDOWS:
+        raise ValueError(f"Unknown window {window!r}; choose from {list(PERFORMANCE_WINDOWS)}")
     if min_market_cap is None:
         min_market_cap = config.DISCOVER_MIN_MARKET_CAP
     if max_market_cap is None:
@@ -128,12 +175,12 @@ def discover_candidates(limit: int = 8, exclude=None,
 
     if exchange is not None:
         for symbol in _from_exchange(
-            exchange, min_market_cap=min_market_cap, max_market_cap=max_market_cap
+            exchange, window_days=PERFORMANCE_WINDOWS[window],
+            min_market_cap=min_market_cap, max_market_cap=max_market_cap,
         ):
             if symbol not in seen:
                 seen.add(symbol)
                 pool.append(symbol)
-        random.shuffle(pool)
         return pool[:limit]
 
     # Always try the return screener first, then shuffle the rest.

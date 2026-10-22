@@ -95,6 +95,7 @@ def screen(use_jev: bool = True, top_n: int = 25, jev_top: int = 25,
            watchlist: list[str] | None = None,
            discover_buy_only: bool = False,
            discover_exchange: str | None = None,
+           discover_window: str = discover.DEFAULT_WINDOW,
            api_key: str | None = None,
            consistent_questions: bool = False,
            reconcile_answers: bool = False) -> dict:
@@ -118,7 +119,7 @@ def screen(use_jev: bool = True, top_n: int = 25, jev_top: int = 25,
         try:
             pool = discover.discover_candidates(
                 limit=max(discover_count * 5, 12), exclude=watchlist,
-                exchange=discover_exchange,
+                exchange=discover_exchange, window=discover_window,
             )
         except Exception as exc:  # noqa: BLE001
             print(f"[discover] failed: {exc}")
@@ -184,7 +185,12 @@ def screen(use_jev: bool = True, top_n: int = 25, jev_top: int = 25,
         pool_results = [
             r for r in pool_results if (r.get("jev") or {}).get("verdict") == "buy_now"
         ]
-    pool_results.sort(key=lambda r: r["change_5d_pct"], reverse=True)
+    if discover_exchange:
+        # discover_candidates already ranked these best-first over the chosen window.
+        rank = {t: i for i, t in enumerate(pool)}
+        pool_results.sort(key=lambda r: rank[r["ticker"]])
+    else:
+        pool_results.sort(key=lambda r: r["change_5d_pct"], reverse=True)
     top_returns = pool_results[: max(discover_count * 3, 6)]
     random.shuffle(top_returns)
     discovered = [r["ticker"] for r in top_returns[:discover_count]]

@@ -20,7 +20,10 @@ A stock **screener + backtester** for US and Canadian markets, with optional
   so it varies each run, marked with a 🔍. They exist for that run only and are
   **never** written to the watchlist. The Streamlit app adds a **Discover from
   exchange** dropdown (TSX by default; also TSXV, NASDAQ, NYSE, NYSE American —
-  North America only); the market-cap band applies in that listing's own currency.
+  North America only); a **Best performers over** dropdown (1 day, 5 days,
+  1 month by default, 3 months) sets the period used to rank that exchange's
+  names. Periods longer than a day rank the exchange's 250 most-traded names in
+  the band. The market-cap band applies in that listing's own currency.
 - **Jev's entry judgment** — judges each top candidate's **trend quality**,
   **entry risk**, **momentum sustainability**, **buy candidacy**, and an overall
   **verdict** (buy now / watch / avoid), blended into the final score.
