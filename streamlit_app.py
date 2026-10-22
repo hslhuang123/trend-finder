@@ -37,6 +37,9 @@ st.set_page_config(page_title="TrendFinder", layout="wide", page_icon="📈")
 # an empty OpenRouter box in the UI can fall back to it.
 _ENV_OPENROUTER_KEY = config.OPENROUTER_API_KEY
 
+# How many freshly discovered names each screener run aims to surface.
+DISCOVER_COUNT = 5
+
 
 def _session_api_key() -> str:
     """The OpenRouter key for the current browser session.
@@ -583,8 +586,8 @@ if "backtest_results" not in st.session_state:
 # --------------------------------------------------------------------------- #
 def _render_screener() -> None:
     st.title("Trending stocks")
-    st.caption("Screener — checks the stocks you enter plus a freshly discovered "
-               "'buy now' name, ranks them by momentum, and enriches them with Jev's judgment.")
+    st.caption("Screener — checks the stocks you enter plus at least five freshly discovered "
+               "names, ranks them by momentum, and enriches them with Jev's judgment.")
 
     # --- What to screen (one or more tickers / company names) ---
     query = st.text_input(
@@ -593,7 +596,7 @@ def _render_screener() -> None:
         key="screen_query",
         help="Enter one or more tickers or company names, separated by commas "
              "(e.g. \"AAPL, CVE.TO, Rogers\"). The screener matches each one and "
-             "then adds a freshly discovered name rated 'buy now'.",
+             "then adds at least five freshly discovered names (rated 'buy now' when Jev is on).",
     )
     col_exchange, col_window = st.columns(2)
     exchange = col_exchange.selectbox(
@@ -601,7 +604,7 @@ def _render_screener() -> None:
         list(discover.EXCHANGES),
         index=list(discover.EXCHANGES).index(discover.DEFAULT_EXCHANGE),
         key="discover_exchange",
-        help="The discovered name comes from this exchange (North America only), "
+        help="Discovered names come from this exchange (North America only), "
              "limited to mid-cap companies ($2B–$10B market cap, in the listing's "
              "own currency).",
     )
@@ -642,15 +645,16 @@ def _render_screener() -> None:
             # With nothing typed, run discovery alone.
             label = ", ".join(tickers) or "discovery only"
             spinner = (
-                f"Screening {label} + 1 discovered from {exchange}… (Jev calls can take ~30s)"
+                f"Screening {label} + {DISCOVER_COUNT} discovered from {exchange}… (Jev calls can take ~1 min)"
                 if tickers else
                 f"Discovering from {exchange}… (Jev calls can take ~30s)"
             )
             with st.spinner(spinner):
                 st.session_state.screen_results = screener.screen(
-                    use_jev=use_jev, watchlist=tickers, discover_count=1,
-                    discover_buy_only=use_jev, discover_exchange=exchange,
-                    discover_window=window,
+                    use_jev=use_jev, watchlist=tickers, discover_count=DISCOVER_COUNT,
+                    top_n=50, jev_top=50,  # judge every candidate, not just the strongest 25
+                    discover_buy_only=use_jev, discover_fill=True,
+                    discover_exchange=exchange, discover_window=window,
                     api_key=_session_api_key(),
                     consistent_questions=True, reconcile_answers=True,
                 )
@@ -699,22 +703,27 @@ def _render_screener() -> None:
         st.iframe(_screener_table_html(main_rows, charts), height=height)
         st.caption("Hover the **AI** badge for the AI analysis · hover a **ticker** for its chart · hover a **column heading** for what it means.")
 
-    # --- Discovered table (a separate freshly-found 'buy now' name) ---
+    # --- Discovered table (freshly-found names; 'buy now' only when Jev is on) ---
     st.subheader("Discovered")
     if disc_rows:
         disc_height = min(150 + 42 * len(disc_rows), 720)
         st.iframe(_screener_table_html(disc_rows, charts), height=disc_height)
-        st.caption(
-            "One freshly discovered name that Jev rated **buy now** — shown for this run only, never saved."
-            if meta.get("jev_enabled") else
-            "One freshly discovered top performer (not AI-vetted — Jev is off) — shown for this run only, never saved."
-        )
+        n = len(disc_rows)
+        names = f"{n} freshly discovered name{'s' if n != 1 else ''}"
+        if meta.get("jev_enabled"):
+            n_buy = sum(1 for r in disc_rows if (r.get("jev") or {}).get("verdict") == "buy_now")
+            detail = (
+                "all rated **buy now**" if n_buy == n else
+                f"{n_buy} rated **buy now**; the rest are the next-best by return — check each AI badge"
+            )
+            st.caption(f"{names} — {detail}. Shown for this run only, never saved.")
+        else:
+            st.caption(f"{names} (top performers, not AI-vetted — Jev is off). Shown for this run only, never saved.")
+        if n < DISCOVER_COUNT:
+            st.info(f"Only {n} candidate{'s' if n != 1 else ''} found on this exchange for this period — "
+                    "try another exchange or period.")
     else:
-        st.info(
-            "No 'buy now' discovered candidate this run."
-            if meta.get("jev_enabled")
-            else "No discovered candidate this run — try another exchange or period."
-        )
+        st.info("No discovered candidate this run — try another exchange or period.")
 
 
 # --------------------------------------------------------------------------- #
@@ -827,7 +836,7 @@ def _render_help() -> None:
         is real advice.
 
         **Screener** — enter one or more tickers or company names (separate them with
-        commas); it checks those plus one **discovered** 'buy now' name (🔍) from the
+        commas); it checks those plus at least five **discovered** names (🔍; Jev "buy now" names first, topped up with the next-best) from the
         **exchange you pick** in the *Discover from exchange* dropdown (TSX by default;
         also TSXV, NASDAQ, NYSE, NYSE American) and ranks that exchange's mid-caps by their
         return over the period in *Best performers over* (1 day, 5 days, 1 month by default,

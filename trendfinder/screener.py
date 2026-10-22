@@ -13,6 +13,8 @@ from . import company, config, decisions, discover, jev_client, market_data
 
 # Jev's overall verdict shifts the final score the most.
 VERDICT_BONUS = {"buy_now": 0.35, "watch": 0.0, "avoid": -0.45}
+# Order used when topping up discovered names beyond the "buy now" ones.
+_FILL_VERDICT_ORDER = {"buy_now": 0, "watch": 1, "avoid": 2}
 
 
 def compute_momentum_score(row: pd.Series) -> float:
@@ -96,6 +98,7 @@ def screen(use_jev: bool = True, top_n: int = 25, jev_top: int = 25,
            discover_buy_only: bool = False,
            discover_exchange: str | None = None,
            discover_window: str = discover.DEFAULT_WINDOW,
+           discover_fill: bool = False,
            api_key: str | None = None,
            consistent_questions: bool = False,
            reconcile_answers: bool = False) -> dict:
@@ -178,22 +181,32 @@ def screen(use_jev: bool = True, top_n: int = 25, jev_top: int = 25,
 
     # Surface the discovered candidates with the HIGHEST RETURNS, but pick
     # randomly from the top few so the surprises vary between runs. When
-    # discover_buy_only is set, keep only names Jev rated "buy now".
+    # discover_buy_only is set, keep only names Jev rated "buy now"; with
+    # discover_fill, top up to discover_count from the remaining candidates
+    # (Jev "watch" before "avoid", then by return rank).
     pool_set = set(pool)
     pool_results = [r for r in results if r["ticker"] in pool_set]
-    if discover_buy_only:
-        pool_results = [
-            r for r in pool_results if (r.get("jev") or {}).get("verdict") == "buy_now"
-        ]
     if discover_exchange:
         # discover_candidates already ranked these best-first over the chosen window.
         rank = {t: i for i, t in enumerate(pool)}
         pool_results.sort(key=lambda r: rank[r["ticker"]])
     else:
         pool_results.sort(key=lambda r: r["change_5d_pct"], reverse=True)
-    top_returns = pool_results[: max(discover_count * 3, 6)]
+    qualified = pool_results
+    if discover_buy_only:
+        qualified = [
+            r for r in pool_results if (r.get("jev") or {}).get("verdict") == "buy_now"
+        ]
+    top_returns = qualified[: max(discover_count * 3, 6)]
     random.shuffle(top_returns)
-    discovered = [r["ticker"] for r in top_returns[:discover_count]]
+    chosen = top_returns[:discover_count]
+    if discover_fill and len(chosen) < discover_count:
+        chosen_tickers = {r["ticker"] for r in chosen}
+        rest = [r for r in pool_results if r["ticker"] not in chosen_tickers]
+        # sorted() is stable, so rank order is kept within each verdict.
+        rest.sort(key=lambda r: _FILL_VERDICT_ORDER.get((r.get("jev") or {}).get("verdict"), 1))
+        chosen += rest[: discover_count - len(chosen)]
+    discovered = [r["ticker"] for r in chosen]
     disc_set = set(discovered)
     results = [r for r in results if r["ticker"] not in pool_set or r["ticker"] in disc_set]
     for item in results:
