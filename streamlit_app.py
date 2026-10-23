@@ -15,8 +15,10 @@ API key into the sidebar to enable Jev (the key is kept only for the session).
 from __future__ import annotations
 
 import html as _html
+from datetime import date
 import json
 import re
+from string import Template
 
 import pandas as pd
 import streamlit as st
@@ -110,6 +112,80 @@ def _cap_tag(market_cap: float | None, band: str | None = None) -> str:
     return f'<span class="cap-tag cap-{key}" title="{key.title()}-cap company">{key.title()}</span>'
 
 
+def _cell(v) -> str:
+    """HTML-safe table cell text. `$` is entity-encoded so markdown never reads
+    two prices in one table as a LaTeX span."""
+    if v is None or (isinstance(v, float) and v != v):
+        return "—"
+    return _html.escape(str(v)).replace("$", "&#36;")
+
+
+def _html_table(df: pd.DataFrame, numeric: tuple[str, ...] = ()) -> str:
+    """Render a DataFrame as a themed HTML table (st.dataframe draws on a canvas
+    with Streamlit's own colours, which cannot follow the Day/Night toggle)."""
+    head = "".join(f"<th>{_cell(c)}</th>" for c in df.columns)
+    body = "".join(
+        "<tr>" + "".join(
+            f'<td class="num">{_cell(v)}</td>' if c in numeric else f"<td>{_cell(v)}</td>"
+            for c, v in row.items()
+        ) + "</tr>"
+        for row in df.to_dict("records")
+    )
+    return (f'<div class="tf-table-wrap"><table class="tf-table"><thead><tr>{head}</tr></thead>'
+            f"<tbody>{body}</tbody></table></div>")
+
+
+_EQUITY_COLORS = {"strategy": "#2f81f7", "benchmark": "#d29922"}
+
+
+def _equity_svg(series: dict[str, list[dict]], width: int = 800, height: int = 320) -> str:
+    """Inline-SVG line chart of {name: [{date, value}]}. Text, grid and axes take
+    their colours from CSS (st.line_chart renders on a fixed white background)."""
+    pts = {
+        name: [(pd.Timestamp(p["date"]).toordinal(), float(p["value"])) for p in rows]
+        for name, rows in series.items() if rows
+    }
+    if not pts:
+        return ""
+    xs = [x for rows in pts.values() for x, _ in rows]
+    ys = [y for rows in pts.values() for _, y in rows]
+    x0, x1 = min(xs), max(xs)
+    y0, y1 = min(ys), max(ys)
+    pad_y = (y1 - y0) * 0.05 or 1.0
+    y0, y1 = y0 - pad_y, y1 + pad_y
+    left, right, top, bottom = 70, 12, 30, 28
+
+    def sx(x: float) -> float:
+        return left + (x - x0) / ((x1 - x0) or 1) * (width - left - right)
+
+    def sy(y: float) -> float:
+        return top + (1 - (y - y0) / (y1 - y0)) * (height - top - bottom)
+
+    def money(v: float) -> str:
+        return f"${v / 1000:,.0f}k" if abs(v) >= 1000 else f"${v:,.0f}"
+
+    parts = []
+    for i in range(5):  # y grid + labels
+        v = y0 + (y1 - y0) * i / 4
+        y = sy(v)
+        parts.append(f'<line class="grid" x1="{left}" x2="{width - right}" y1="{y:.1f}" y2="{y:.1f}"/>')
+        parts.append(f'<text x="{left - 6}" y="{y + 4:.1f}" text-anchor="end">{money(v)}</text>')
+    for i in range(5):  # x labels
+        d = round(x0 + (x1 - x0) * i / 4)
+        anchor = "start" if i == 0 else "end" if i == 4 else "middle"
+        parts.append(f'<text x="{sx(d):.1f}" y="{height - 6}" text-anchor="{anchor}">'
+                     f"{date.fromordinal(d).strftime('%Y-%m')}</text>")
+    for n, (name, rows) in enumerate(pts.items()):
+        color = _EQUITY_COLORS.get(name, "#8b949e")
+        points = " ".join(f"{sx(x):.1f},{sy(y):.1f}" for x, y in rows)
+        parts.append(f'<polyline fill="none" stroke="{color}" stroke-width="1.8" points="{points}"/>')
+        lx = left + 8 + n * 110
+        parts.append(f'<rect x="{lx}" y="8" width="14" height="3" fill="{color}"/>'
+                     f'<text x="{lx + 20}" y="13">{_cell(name)}</text>')
+    return (f'<div class="tf-chart"><svg viewBox="0 0 {width} {height}" width="100%" role="img" '
+            f'aria-label="Equity curve vs benchmark">{"".join(parts)}</svg></div>')
+
+
 def _fmt_num(v: float | None, digits: int = 2) -> str:
     return "—" if v is None else f"{v:.{digits}f}"
 
@@ -162,36 +238,64 @@ def _verdict_reason(verdict, quality, risk) -> str:
 # --------------------------------------------------------------------------- #
 # Theme toggle (System / Light / Dark) for both the Streamlit UI and the table.
 # --------------------------------------------------------------------------- #
-_DARK_CSS = """
-:root { color-scheme: dark; }
-html, body, [data-testid="stAppViewContainer"], [data-testid="stMainBlockContainer"] { background-color: #0e1116 !important; color: #e6edf3 !important; }
-[data-testid="stSidebar"] { background-color: #161b22 !important; color: #e6edf3 !important; }
-[data-testid="stHeader"] { background-color: #0e1116 !important; color: #e6edf3 !important; }
-h1,h2,h3,h4,h5,h6,p,span,label,div,strong,em,li { color: #e6edf3 !important; }
-a { color: #58a6ff !important; }
-[data-testid="stMetric"], [data-testid="stMetricValue"], [data-testid="stMetricLabel"] { background-color: #161b22 !important; color: #e6edf3 !important; }
-[data-testid="stDataFrame"] { background-color: #161b22 !important; }
-.stButton button, [data-testid="stBaseButton-primary"], [data-testid="stBaseButton-secondary"] { background-color: #1c232c !important; color: #e6edf3 !important; border-color: #2a323d !important; }
-[data-testid="stExpander"] details, [data-testid="stExpander"] summary { background-color: #161b22 !important; }
-[data-testid="stTextInput"] input, [data-testid="stNumberInput"] input, [data-testid="stSelectbox"], [data-testid="stMultiSelect"] { background-color: #1c232c !important; color: #e6edf3 !important; border-color: #2a323d !important; }
-[data-testid="stAlert"], [data-testid="stNotification"] { background-color: #1c232c !important; color: #e6edf3 !important; }
-[data-baseweb="tooltip"], [role="tooltip"], [data-testid="stTooltipContent"], [data-testid="stTooltipErrorContent"] { background-color: #1c232c !important; color: #e6edf3 !important; }
-[data-baseweb="tooltip"] *, [role="tooltip"] *, [data-testid="stTooltipContent"] *, [data-testid="stTooltipErrorContent"] * { color: #e6edf3 !important; }
-/* Selectbox control + its dropdown list (rendered in a portal outside the app container). */
-[data-baseweb="select"] > div { background-color: #1c232c !important; border-color: #2a323d !important; }
-[data-baseweb="select"] *, [data-baseweb="select"] input { color: #e6edf3 !important; -webkit-text-fill-color: #e6edf3 !important; }
-[data-baseweb="popover"] > div, [data-baseweb="menu"], ul[role="listbox"] { background-color: #1c232c !important; border-color: #2a323d !important; }
-[data-baseweb="popover"] li, [data-baseweb="popover"] li * , li[role="option"], li[role="option"] * { background-color: transparent !important; color: #e6edf3 !important; }
-[data-baseweb="popover"] li:hover, li[role="option"]:hover, li[role="option"][aria-selected="true"] { background-color: #2a323d !important; }
-/* Newer Streamlit (react-aria) selectbox: control and virtual dropdown portal. */
-[data-testid="stSelectbox"] div[data-rac], [data-testid="stSelectbox"] input { background-color: #1c232c !important; color: #e6edf3 !important; -webkit-text-fill-color: #e6edf3 !important; border-color: #2a323d !important; }
-[data-testid="stSelectboxVirtualDropdown"] { background-color: #1c232c !important; border: 1px solid #2a323d !important; }
-[data-testid="stSelectboxVirtualDropdown"] [role="option"], [data-testid="stSelectboxVirtualDropdown"] [role="option"] * { background-color: transparent !important; color: #e6edf3 !important; }
-[data-testid="stSelectboxVirtualDropdown"] [role="option"]:hover, [data-testid="stSelectboxVirtualDropdown"] [role="option"][data-focused="true"], [data-testid="stSelectboxVirtualDropdown"] [role="option"][data-selected="true"] { background-color: #2a323d !important; }
-[data-testid="stSidebar"] .stRadio label, [data-testid="stSidebar"] .stRadio p { color: #e6edf3 !important; }
-"""
+# Streamlit's own widgets are themed natively (and ignore our Day/Night toggle), so
+# every surface the app uses is restyled explicitly from one palette per mode.
+_PALETTES = {
+    "dark": {"scheme": "dark", "bg": "#0e1116", "panel": "#161b22", "surface": "#1c232c",
+             "border": "#2a323d", "hover": "#2a323d", "text": "#e6edf3", "muted": "#8b949e",
+             "link": "#58a6ff"},
+    "light": {"scheme": "light", "bg": "#ffffff", "panel": "#f0f2f6", "surface": "#f0f2f6",
+              "border": "#d0d7de", "hover": "#dfe3ea", "text": "#1f2328", "muted": "#656d76",
+              "link": "#0969da"},
+}
 
-_LIGHT_RESET = """:root { color-scheme: light; }"""
+_SURFACE_CSS = Template("""
+:root { color-scheme: $scheme; }
+html, body, [data-testid="stApp"], [data-testid="stAppViewContainer"], [data-testid="stMain"], [data-testid="stMainBlockContainer"], [data-testid="stHeader"] { background-color: $bg !important; }
+[data-testid="stSidebar"] { background-color: $panel !important; }
+[data-testid="stMetric"] { background-color: $panel !important; }
+[data-testid="stAlert"], [data-testid="stNotification"], [data-testid="stExpander"] details, [data-testid="stExpander"] summary { background-color: $surface !important; }
+/* Inputs: text, number, select, multiselect (control surface, text, placeholder, focus). */
+[data-testid="stTextInputRootElement"], [data-testid="stTextInputRootElement"] > div, [data-testid="stNumberInputContainer"], [data-testid="stSelectbox"] div[data-rac], [data-testid="stMultiSelect"] div[role="group"], [data-baseweb="select"] > div, [data-baseweb="input"], [data-baseweb="base-input"] { background-color: $surface !important; border-color: $border !important; }
+[data-testid="stNumberInputStepUp"], [data-testid="stNumberInputStepDown"], [data-testid="stTextInputRootElement"] button { background-color: transparent !important; color: $text !important; }
+input, textarea { background-color: transparent !important; color: $text !important; -webkit-text-fill-color: $text !important; caret-color: $text !important; }
+input::placeholder, textarea::placeholder { color: $muted !important; -webkit-text-fill-color: $muted !important; opacity: 1 !important; }
+[data-testid="stTextInputRootElement"]:focus-within, [data-testid="stNumberInputContainer"]:focus-within, [data-testid="stMultiSelect"] div[role="group"]:focus-within, [data-testid="stSelectbox"] div[data-rac]:focus-within { border-color: $link !important; }
+[data-testid="stSelectbox"] svg, [data-testid="stMultiSelect"] svg, [data-testid="stNumberInput"] svg, [data-testid="stTooltipIcon"] svg, [data-testid="stTooltipIcon"] button { color: $muted !important; }
+/* Filled chevrons/clear icons need fill; the help icon is stroke-only (fill="none"). */
+[data-testid="stSelectbox"] svg:not([fill="none"]), [data-testid="stMultiSelect"] svg:not([fill="none"]), [data-testid="stNumberInput"] svg:not([fill="none"]) { fill: $muted !important; }
+[data-testid="stMultiSelect"] [data-tag] svg, [data-testid="stMultiSelect"] [data-tag] button { color: #ffffff !important; fill: none !important; }
+/* Dropdown lists (portals): select, multiselect, and the older baseweb popovers. */
+[data-testid$$="Dropdown"], [data-baseweb="popover"] > div, [data-baseweb="menu"], ul[role="listbox"] { background-color: $surface !important; border: 1px solid $border !important; }
+[role="option"], [role="option"] *, [data-baseweb="popover"] li, [data-baseweb="popover"] li * { background-color: transparent !important; color: $text !important; }
+[role="option"]:hover, [role="option"][data-focused="true"], [role="option"][data-selected="true"], [role="option"][aria-selected="true"], [data-baseweb="popover"] li:hover { background-color: $hover !important; }
+/* Tooltips and help bubbles. */
+[data-baseweb="tooltip"], [role="tooltip"], [data-testid="stTooltipContent"], [data-testid="stTooltipErrorContent"] { background-color: $surface !important; color: $text !important; }
+[data-baseweb="tooltip"] *, [role="tooltip"] *, [data-testid="stTooltipContent"] *, [data-testid="stTooltipErrorContent"] * { color: $text !important; }
+/* Buttons: secondary follows the palette; primary keeps the accent. */
+[data-testid="stBaseButton-secondary"] { background-color: $surface !important; color: $text !important; border-color: $border !important; }
+[data-testid="stBaseButton-secondary"] * { color: $text !important; }
+[data-testid="stBaseButton-primary"] { background-color: #0969da !important; border-color: #0969da !important; }
+[data-testid="stBaseButton-primary"], [data-testid="stBaseButton-primary"] * { color: #ffffff !important; }
+/* App-rendered HTML table and equity chart (see _html_table / _equity_svg). */
+.tf-table-wrap { overflow: auto; max-height: 420px; border: 1px solid $border; border-radius: 8px; }
+.tf-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.tf-table th, .tf-table td { padding: 6px 10px; border-bottom: 1px solid $border; text-align: left; white-space: nowrap; color: $text; }
+.tf-table th { position: sticky; top: 0; background: $panel; color: $muted; font-weight: 600; }
+.tf-table td.num { text-align: right; }
+.tf-chart { color: $text; }
+.tf-chart text { fill: $muted; font-size: 14px; }
+.tf-chart .grid { stroke: $border; stroke-width: 1; }
+""")
+
+# Forcing every text node to the palette colour is only needed in dark mode; in
+# light mode Streamlit's own text colours already read correctly.
+_DARK_TEXT_CSS = Template("""
+h1,h2,h3,h4,h5,h6,p,span,label,div,strong,em,li { color: $text !important; }
+a { color: $link !important; }
+[data-testid="stMetric"], [data-testid="stMetricValue"], [data-testid="stMetricLabel"] { color: $text !important; }
+[data-testid="stSidebar"] .stRadio label, [data-testid="stSidebar"] .stRadio p { color: $text !important; }
+""")
 
 # Layout tweaks applied in every theme (not just dark). Streamlit's default
 # metric value is 36px, which is oversized for a row of six summary cards.
@@ -199,19 +303,26 @@ _LAYOUT_CSS = """
 [data-testid="stMetricValue"] { font-size: 1.5rem !important; line-height: 1.25 !important; }
 """
 
+
+def _mode_css(name: str) -> str:
+    p = _PALETTES[name]
+    css = _SURFACE_CSS.substitute(p)
+    return css + _DARK_TEXT_CSS.substitute(p) if name == "dark" else css
+
+
 def _theme_css(mode: str) -> str:
     if mode == "dark":
-        return _DARK_CSS + _LAYOUT_CSS
+        return _mode_css("dark") + _LAYOUT_CSS
     if mode == "system":
-        return f"@media (prefers-color-scheme: dark) {{\n{_DARK_CSS}\n}}" + _LAYOUT_CSS
-    return _LIGHT_RESET + _LAYOUT_CSS
+        return _mode_css("light") + f"@media (prefers-color-scheme: dark) {{\n{_mode_css('dark')}\n}}" + _LAYOUT_CSS
+    return _mode_css("light") + _LAYOUT_CSS
 
 
 def _inject_theme_css(mode: str) -> None:
     try:
         st.markdown(f"<style>{_theme_css(mode)}</style>", unsafe_allow_html=True)
-    except Exception:  # noqa: BLE001 - theme CSS must never break the app
-        pass
+    except Exception as exc:  # noqa: BLE001 - theme CSS must never break the app
+        print(f"[theme] could not apply {mode!r} theme CSS: {exc!r}")
 
 
 def _streamlit_theme() -> str:
@@ -800,7 +911,7 @@ def _render_screener() -> None:
                 "Final score": _fmt_num(r.get("final_score"), 3),
                 "Why": (_verdict_reason(verdict, q_raw, rk_raw) or "") if j else "",
             })
-        st.dataframe(pd.DataFrame(table), width="stretch", hide_index=True)
+        st.markdown(_html_table(pd.DataFrame(table), numeric=("Final score",)), unsafe_allow_html=True)
 
 
 # --------------------------------------------------------------------------- #
@@ -881,22 +992,23 @@ def _render_backtest() -> None:
                 f"max drawdown {_fmt_pct(b.get('max_drawdown_pct'))}")
 
     # --- Equity curve ---
-    series = result.get("series", [])
-    bench_series = result.get("benchmark_series", [])
-    strategy = pd.Series({p["date"]: p["value"] for p in series}, name="strategy")
-    bench = pd.Series({p["date"]: p["value"] for p in bench_series}, name="benchmark")
-    curve = pd.concat([strategy, bench], axis=1)
-    curve.index = pd.to_datetime(curve.index)
     st.subheader("Equity curve vs benchmark")
-    st.line_chart(curve, height=340)
+    st.markdown(
+        _equity_svg({"strategy": result.get("series", []),
+                     "benchmark": result.get("benchmark_series", [])}),
+        unsafe_allow_html=True,
+    )
 
     # --- Trades table ---
     st.subheader("Trades")
     trades = result.get("trades", [])
     if trades:
         tdf = pd.DataFrame(trades)[["date", "ticker", "side", "reason", "price", "shares", "value", "pnl"]]
+        tdf["price"] = tdf["price"].map(lambda v: f"{v:,.2f}")
+        tdf["shares"] = tdf["shares"].map(lambda v: f"{v:,.4f}")
+        tdf["value"] = tdf["value"].map(lambda v: f"{v:,.2f}")
         tdf["pnl"] = tdf["pnl"].apply(lambda v: _fmt_money(v))
-        st.dataframe(tdf, use_container_width=True, hide_index=True)
+        st.markdown(_html_table(tdf, numeric=("price", "shares", "value", "pnl")), unsafe_allow_html=True)
     else:
         st.info("No trades were generated.")
 
