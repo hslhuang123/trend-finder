@@ -18,6 +18,7 @@ import html as _html
 from datetime import date
 import json
 import re
+import threading
 from string import Template
 
 import pandas as pd
@@ -30,6 +31,7 @@ from trendfinder import (
     costs,
     decisions,
     discover,
+    evaluate,
     explain,
     market_data,
     screener,
@@ -1210,269 +1212,135 @@ def _render_backtest() -> None:
 
 
 # --------------------------------------------------------------------------- #
-# AI Guide tab
+# Evaluate tab: reads the decision log (data/decisions.db)
 # --------------------------------------------------------------------------- #
+# Below this many results a mean return says very little.
+_MIN_RESULTS = 30
+
+
+def _backfill_outcomes() -> None:
+    try:
+        decisions.resolve_outcomes()
+    except Exception as exc:  # noqa: BLE001 - best effort, like the Flask app
+        print(f"[app] resolve_outcomes failed: {exc}")
+
+
+@st.cache_resource
+def _start_outcome_backfill() -> threading.Thread:
+    """Fill in 20-day outcomes for logged decisions in the background, once per
+    server process (the Flask app does the same at startup)."""
+    thread = threading.Thread(target=_backfill_outcomes, daemon=True)
+    thread.start()
+    return thread
+
+
+def _render_evaluate() -> None:
+    st.title("Evaluate Jev")
+    st.caption("Does Jev's judgment beat the rule-only momentum ranking? This page reads the "
+               "decision log: every AI analysis and screener run, matched with what the stock "
+               "did over the next 20 trading days.")
+
+    if st.button("Update outcomes now", key="ev_resolve",
+                 help="Looks up what each logged stock did since the decision and fills in the "
+                      "20-day result. Decisions younger than about 20 trading days stay pending."):
+        with st.spinner("Looking up what the stocks did since each decision…"):
+            summary = decisions.resolve_outcomes()
+        st.success(f"Filled in {summary['entries_resolved']} AI decisions and "
+                   f"{summary['screen_runs_resolved']} screener rows; {summary['skipped']} are "
+                   "too recent or have no price data yet.")
+
+    report = evaluate.evaluate()
+    ov = report["overview"]
+    if "error" in ov:
+        st.warning(f"Couldn't read the decision log: {ov['error']}")
+        return
+
+    cols = st.columns(4)
+    cols[0].metric("AI decisions logged", ov["total_entries"])
+    cols[1].metric("…with a 20-day result", ov["resolved_entries"])
+    cols[2].metric("Screener rows logged", ov["total_screen_runs"])
+    cols[3].metric("…with a 20-day result", ov["resolved_screen_runs"])
+    if ov.get("first_decision"):
+        st.caption(f"AI decisions from {ov['first_decision'][:10]} to {ov['last_decision'][:10]}. "
+                   "Stored in data/decisions.db; on Streamlit Cloud that file is wiped when "
+                   "the app restarts.")
+
+    resolved = ov["resolved_entries"]
+    if not resolved and not ov["resolved_screen_runs"]:
+        st.info("Nothing to evaluate yet. A decision gets its result about 20 trading days "
+                "after you press **Run AI analysis**, so expect this page to start empty.")
+    elif resolved < _MIN_RESULTS:
+        st.warning(f"Only {resolved} AI decisions have a result so far. Averages on this few "
+                   "results are mostly noise; wait for at least "
+                   f"{_MIN_RESULTS} before drawing any conclusion.")
+
+    def table(rows: list[dict], columns: dict[str, str], numeric: tuple[str, ...]) -> None:
+        df = pd.DataFrame(rows).rename(columns=columns)[list(columns.values())]
+        st.markdown(_html_table(df, numeric=tuple(columns[k] for k in numeric)),
+                    unsafe_allow_html=True)
+
+    verdicts = report["entry_verdicts"]
+    if resolved:
+        st.subheader("Entry verdicts")
+        st.caption("Average 20-day return after each kind of Jev verdict. If Jev helps, "
+                   "*buy now* should beat *watch*, and *watch* should beat *avoid*.")
+        table([{"label": r["label"].replace("_", " "), "mean": _fmt_pct(r["mean_forward_20d"]),
+                "n": r["n"]} for r in verdicts["verdict"]],
+              {"label": "Verdict", "mean": "Avg 20-day return", "n": "N"}, ("mean", "n"))
+
+        st.subheader("Buy candidate")
+        st.caption("The same average, split by Jev's yes/no Buy answer.")
+        table([{"label": "yes" if r["label"] == "true" else "no", "mean": _fmt_pct(r["mean_forward_20d"]),
+                "n": r["n"]} for r in verdicts["is_buy_candidate"]],
+              {"label": "Buy", "mean": "Avg 20-day return", "n": "N"}, ("mean", "n"))
+
+        st.subheader("Score calibration")
+        st.caption("How closely Jev's scores move with the 20-day return (−1 to +1; blank when "
+                   "there are too few results). Hoped-for directions: Quality positive, "
+                   "Risk negative, sustainability positive.")
+        cal = report["calibration"]
+        names = {"trend_quality": "Quality", "risk_at_entry": "Risk",
+                 "momentum_sustainability": "Momentum sustainability"}
+        table([{"field": names[k], "corr": _fmt_num(cal[k]["corr"], 3), "n": cal[k]["n"]}
+               for k in names if k in cal],
+              {"field": "Score", "corr": "Correlation", "n": "N"}, ("corr", "n"))
+
+    ranking = report["ranking"]
+    if ranking["runs"]:
+        st.subheader("Ranking test")
+        st.caption(f"Average 20-day return of the top {report['top_k']} names by **Final** score "
+                   "(with Jev) versus by **Momentum** (rules only) in each screener run.")
+        s = ranking["summary"]
+        cols = st.columns(3)
+        cols[0].metric("Final avg", _fmt_pct(s["final_mean"]))
+        cols[1].metric("Momentum avg", _fmt_pct(s["momentum_mean"]))
+        cols[2].metric("Difference", _fmt_pct(s["diff"]))
+        table([{"run": r["run_at"], "k": r["k"], "final": _fmt_pct(r["final_mean"]),
+                "momentum": _fmt_pct(r["momentum_mean"]), "diff": _fmt_pct(r["diff"])}
+               for r in ranking["runs"]],
+              {"run": "Run", "k": "K", "final": "Final avg", "momentum": "Momentum avg",
+               "diff": "Diff"}, ("k", "final", "momentum", "diff"))
+        st.caption("This app logs a screener run before any AI analysis, so in those rows Final "
+                   "equals Momentum and they can never show a difference. The test only means "
+                   "something for runs where Jev ranked the list, such as in the Flask app.")
+
+    st.subheader("Caveats")
+    st.markdown("\n".join(f"- {c}" for c in report["caveats"]))
+
+
+# --------------------------------------------------------------------------- #
+# Help and AI Guide tabs: the text lives in docs/*.md, rendered as-is.
+# --------------------------------------------------------------------------- #
+def _render_doc(filename: str) -> None:
+    st.markdown((config.ROOT / "docs" / filename).read_text(encoding="utf-8"))
+
+
 def _render_ai_guide() -> None:
-    st.title("AI Guide")
-    st.caption("How the AI analysis (Jev) and the AI explanation work, step by step.")
-    st.markdown(
-        """
-        TrendFinder has **two separate, optional AI steps**. Neither runs by itself, and
-        neither ever buys or sells for you.
-
-        |  | **AI analysis (Jev)** | **Explain with AI** |
-        |---|---|---|
-        | Question it answers | Is this a good stock to buy right now? | Why did Jev say that, in plain words? |
-        | What you get back | Scores, yes/no answers and a verdict — no text | Two or three sentences of text |
-        | Changes the ranking? | **Yes** — it feeds the Final score | **No** — wording only |
-        | Run by | Jev (TypeSafe System One) through OpenRouter | A small chat model you pick, through OpenRouter |
-        | Button | **Run AI analysis** | **Explain with AI** |
-        | Rough cost | about \\$0.00006 per ticker | \\$0.00001–\\$0.0005 per ticker, depending on the model |
-        | Needs | An OpenRouter API key in the sidebar | The same key, and a finished AI analysis |
-        """
-    )
-
-    st.header("1. The AI analysis (Jev)")
-    st.markdown(
-        """
-        **What Jev is.** Jev is a *decision* model, not a chatbot. You give it a **state**
-        (a set of facts) and a list of typed **questions**, and it answers each one with a
-        score, a yes/no, or a pick from a fixed list. It never writes reasons. Because the
-        answers are structured, the app can combine them into a score, keep them in a log,
-        and later check whether they were any good. The model in use is shown in the sidebar.
-
-        **What happens when you press Run AI analysis**
-
-        1. **Screen first.** The screener has already ranked the stocks by a rule-based
-           momentum score. That part is free and uses no AI.
-        2. **You pick the tickers.** Choose them under *AI analysis*. Nothing is sent
-           until you press the button, so you control the cost. A ticker you already
-           analyzed is simply asked again.
-        3. **News is fetched (optional).** With *Include news from the past 7 days* ticked,
-           the app collects up to 10 recent headlines per ticker from Google News (date,
-           source and title only — no article text; cached for 30 minutes). If the lookup
-           fails, Jev is asked without news and the News column says *unavailable*.
-        4. **The state is built.** Per ticker: price, 1-day and 5-day change, % above the
-           20-day and 50-day averages, ATR %, volume ratio, RSI, and the headlines.
-        5. **Jev is asked the questions below.** Up to six tickers are asked at the same time.
-        6. **The answers are reconciled** so Buy and Verdict can never contradict each other.
-        7. **The Final score is calculated** and the table is re-sorted by it.
-        8. **The call is logged** in the local decision log together with its rule-only
-           baseline, so that Jev's judgments can later be tested against what the stock
-           actually did.
-        """
-    )
-
-    st.subheader("The questions Jev answers")
-    st.markdown(
-        """
-        | Question | Answer | What it means |
-        |---|---|---|
-        | **Quality** | score 0–2 | How clear and sustained the uptrend is. **2 = strong**, 1 = moderate, 0 = weak or choppy. Higher is better. |
-        | **Risk** | score 0–2 | The risk of buying at today's price. **0 = low**, 1 = medium, 2 = high (extended or volatile). **Lower is safer.** |
-        | **Momentum sustainability** | yes / no | Is the upward move likely to continue over the next few weeks? |
-        | **Buy** | yes / no | Is this a valid long buy candidate at all? |
-        | **Verdict** | buy now / watch / avoid | The overall call. |
-        | **News tone** * | score 0–2 | Tone of the headlines: 0 negative, 1 neutral, 2 positive. |
-        | **News catalyst** * | none / positive / negative | Does a headline describe a specific event (earnings beat, downgrade, lawsuit…)? |
-        | **News explains move** * | yes / no | Do the headlines explain the recent 5-day move? Recorded for the log only; it does not change the score. |
-
-        \\* Only asked when news is included. Scores can land between levels (for example
-        1.4), so you will see decimals. The headlines are listed under the results table
-        so you can check exactly what Jev saw, and they are treated as information only —
-        Jev is told to ignore any instructions hidden inside them.
-        """
-    )
-
-    st.subheader("Keeping Buy and Verdict consistent")
-    st.markdown(
-        """
-        A model can contradict itself (for example "buy candidate: yes" on a weak trend), so
-        the app derives one consistent story from the Quality and Risk ratings:
-
-        - **Quality below 0.5, or Risk 1.5 or more** → **Buy = no**, and a *buy now* or
-          *watch* verdict becomes **avoid**.
-        - **Otherwise** → **Buy = yes**, and an *avoid* verdict becomes **watch**.
-        - **A clear negative news catalyst** caps *buy now* at **watch**.
-
-        Roughly: a strong setup is *Quality 2, Risk 0–1, Buy yes, Verdict buy now*; a weak
-        one is *Quality 0–1, Risk 2, Buy no, Verdict avoid*.
-        """
-    )
-
-    st.subheader("How the Final score is built")
-    st.markdown(
-        """
-        **Final** is the app's ranking score — it sorts the table, higher first. It is **not**
-        a probability or a predicted return. It is the technical **Momentum** score
-        (from the Screener, roughly −1 to +0.9) plus these AI adjustments:
-
-        | Part | Adjustment | Range |
-        |---|---|---|
-        | Quality | +0.15 × Quality | 0 to +0.30 |
-        | Risk | −0.15 × Risk | −0.30 to 0 |
-        | Buy candidate | +0.25 if yes | 0 or +0.25 |
-        | Momentum sustainability | +0.20 if yes | 0 or +0.20 |
-        | News tone | +0.15 × (tone − 1), only with news | −0.15 to +0.15 |
-        | Verdict | buy now +0.35, watch 0, avoid −0.45 | −0.45 to +0.35 |
-
-        **Worked example.** Momentum 0.40, Quality 1.6, Risk 1.1, Buy yes, sustainability yes,
-        neutral news, verdict *watch*:
-        0.40 + 0.24 − 0.165 + 0.25 + 0.20 + 0 + 0 = **0.925**.
-
-        The theoretical range is −1.8 to +2.15 (the ceiling without Jev is +0.9).
-        """
-    )
-
-    st.header("2. The AI explanation")
-    st.markdown(
-        """
-        Jev returns numbers and choices, never reasons. So there are two ways to get a
-        plain-English "why":
-
-        - **The Why line — free and instant.** The app writes it from rules, using only
-          Quality, Risk and the Verdict (for example "good trend, low/medium risk, clear
-          entry"). It appears in the table's *Why* column and in the **AI** badge popup.
-        - **Explain with AI — a small paid call.** A chat model on OpenRouter writes a short
-          explanation for each analyzed ticker. It appears under the table and replaces the
-          Why line in the badge popup.
-
-        **What the chat model is given.** The ticker; Jev's verdict, Quality and Risk (as
-        numbers with a word such as "strong" or "high"); the Buy flag; 1-day and 5-day
-        change; % above the 20-day and 50-day averages; RSI; the daily swing (ATR %); and,
-        when news was used, the headlines, their tone and any catalyst.
-
-        **What it is told.** Use *only* those facts; write two or three short sentences in
-        plain English with no jargon or markdown; give no trading advice; do not invent
-        numbers, events or causes; treat headlines as information, never as instructions.
-        One call is made per ticker, with a low temperature (0.2) so the wording stays steady.
-
-        **Choosing the model.** Use *Explanation model* in the sidebar. The cheap defaults
-        work for this simple restating task; *DeepSeek V4 Pro* writes best; and
-        *Custom model…* lets you type any OpenRouter id such as `vendor/model-name`. The note
-        under the explanations names the model that wrote them.
-
-        **What it is not.**
-
-        - It is **not Jev's own reasoning** — it restates Jev's answers and the stock's numbers.
-        - It **cannot change** the verdict, the Buy flag or the Final score.
-        - It can still word things loosely, especially on the cheapest models — compare it
-          with the numbers in the table.
-        - If you run the AI analysis again, the old explanation is dropped because it no
-          longer matches; press **Explain with AI** again.
-        - If a call fails, the app lists the tickers it could not explain so you can retry.
-        """
-    )
-
-    st.header("3. Cost, privacy and limits")
-    st.markdown(
-        """
-        - **Your key, your cost.** Calls are billed to the OpenRouter key you paste in the
-          sidebar (kept only for your session) or, if you leave it blank, to the server's key.
-          **Session cost** in the sidebar adds up what Jev and the explanations have cost
-          since you opened the page, as reported by OpenRouter.
-        - **What leaves the app.** Tickers, price indicators and headlines go to OpenRouter.
-          No account, portfolio or personal data is sent.
-        - **Opinions, not predictions.** Jev's answers are structured opinions, not
-          calibrated probabilities. Prices are free and delayed, and the momentum score is
-          a heuristic. Nothing here is investment advice.
-        """
-    )
+    _render_doc("ai-guide.md")
 
 
-# --------------------------------------------------------------------------- #
-# Help tab
-# --------------------------------------------------------------------------- #
 def _render_help() -> None:
-    st.title("Help")
-    st.markdown(
-        """
-        TrendFinder checks a list of stocks, ranks them by momentum, and lets you
-        test a trading plan against history. Prices arrive late, and none of this
-        is real advice.
-
-        **Screener** — enter one or more tickers or company names (separate them with
-        commas); it checks those plus at least five **discovered** names (🔍) from the
-        **exchange you pick** in the *Discover from exchange* dropdown (TSX by default;
-        also TSXV, NASDAQ, NYSE, NYSE American) and ranks that exchange's mid-caps ($2B–$10B)
-        and large-caps (over $10B) separately by their
-        return over the period in *Best performers over* (1 day, 5 days, 1 month by default,
-        or 3 months). With *Skip overextended stocks* ticked (the default) it first drops
-        names that have already run too far (RSI above 65, over 8% above the 20-day
-        average, or below the 20/50-day averages), since Jev rates those as high
-        entry risk. It then ranks everything by momentum. AI judgments (**Jev**) are
-        not run automatically — pick the tickers to analyze under *AI analysis*.
-        Discovered names aren't saved.
-
-        **Backtest** — runs the momentum strategy over the past daily prices of the
-        stock you screened, including trading costs, and compares the result with
-        simply buying and holding SPY (the S&P 500). It uses only the rule-based
-        momentum signal, not the AI analysis.
-
-        **Jev and the AI explanation** — optional AI steps that run only when you ask, to
-        save tokens and cost. Paste your own OpenRouter API key in the sidebar (get one at
-        [openrouter.ai/keys](https://openrouter.ai/keys)); it is kept only for your
-        session, and leaving it blank uses the server's key, if one is configured. Then
-        pick tickers under *AI analysis*, press **Run AI analysis**, and press **Explain
-        with AI** for a plain-English reason. The **AI Guide** page explains how both
-        steps work, what Quality, Risk, Buy, Verdict, Final and News mean, and how the
-        Final score is calculated. Neither step ever buys or sells for you.
-
-        **Screener table columns** (hover a column heading in the table for a short tip):
-
-        - **#** — rank, best Final score first.
-        - **Ticker** — the stock symbol. Hover it for the company name and a price chart.
-          The pill beside it shows its size: **Large** (market cap over $10B), **Mid**
-          ($2B–$10B) or **Small** (under $2B), in the listing's own currency.
-        - **Price** — latest (delayed) closing price.
-        - **Market cap** — total value of the company = share price × shares outstanding.
-        - **1d %** — (price ÷ previous close − 1) × 100.
-        - **5d %** — (price ÷ price 5 trading days ago − 1) × 100.
-        - **RSI** — 14-day Relative Strength Index, 0–100: RSI = 100 − 100 ÷ (1 + RS),
-          where RS = average gain ÷ average loss over 14 days (≥ 70 overbought,
-          ≤ 30 oversold, ~50 neutral).
-        - **Vol×** — volume ratio = 5-day average volume ÷ 20-day average volume; above
-          1 means busier than usual.
-        - **ATR %** — 14-day Average True Range as a % of price = ATR(14) ÷ price × 100;
-          a volatility measure (higher = bigger swings).
-        - **Momentum** — the app's technical score (roughly −1…+0.9). Each factor is
-          clamped to −1…+1, then combined: **0.30 × (5d return ÷ 10) + 0.25 × (% above
-          the 20-day average ÷ 5) + 0.20 × ((volume ratio − 1) ÷ 2) + 0.15 × ((RSI − 50)
-          ÷ 25) − 0.10 × (ATR% ÷ 10, floored at 0)**.
-        - **AI** — the AI's judgment, filled in only for tickers you analyze on demand.
-          Hover the badge for Quality, Risk, Buy, Verdict and Final (see the **AI Guide**
-          page).
-
-        **Backtest summary**
-
-        - **Final value** — ending portfolio value = cash + shares × price.
-        - **Total return** — (final value ÷ starting value − 1) × 100 (starting value = $100,000).
-        - **CAGR** — compound annual growth rate = (final ÷ starting)^(1 ÷ years) − 1,
-          where years = calendar days ÷ 365.25.
-        - **Sharpe** — return per unit of risk = mean daily return ÷ daily volatility × √252
-          (252 ≈ trading days per year); ~1 is decent, higher is better.
-        - **Max drawdown** — worst peak-to-trough drop = the lowest value of
-          (value − running peak) ÷ running peak, × 100.
-        - **Trades** — number of fills (buys + sells).
-        - **Benchmark (SPY)** — the same window if you had simply bought and held SPY,
-          starting from $100,000.
-
-        **Backtest trades table**
-
-        - **date** — the trading day of the fill.
-        - **ticker** — the symbol traded.
-        - **side** — buy or sell.
-        - **reason** — entry, take-profit, stop-loss, trailing-stop, or rebalance.
-        - **price** — execution price (that day's close).
-        - **shares** — number of shares traded.
-        - **value** — trade amount: buy = shares × price + fees; sell = shares × price − costs.
-        - **pnl** — realized profit/loss on a sell = (exit price × (1 − cost) − entry price ×
-          (1 + cost)) × shares, where cost = (commission + slippage) ÷ 10,000; shows — on buys.
-
-        **Caveats:** prices are delayed and free (yfinance); results are a heuristic,
-        not a prediction; nothing here is investment advice.
-        """
-    )
+    _render_doc("help.md")
 
 
 # --------------------------------------------------------------------------- #
@@ -1481,7 +1349,7 @@ def _render_help() -> None:
 def main() -> None:
     with st.sidebar:
         st.header("📈 TrendFinder")
-        page = st.radio("Navigation", ["Screener", "Backtest", "AI Guide", "Help"])
+        page = st.radio("Navigation", ["Screener", "Backtest", "Evaluate", "AI Guide", "Help"])
         theme_choice = st.radio("Theme", ["System", "Light", "Dark"], index=0, key="theme_choice")
         st.session_state["theme_mode"] = theme_choice.lower()
 
@@ -1535,6 +1403,8 @@ def main() -> None:
                 st.warning("Model ids look like `vendor/model-name`.")
         cost_slot = st.empty()  # filled at the end of the run, once this run's calls are counted
 
+    _start_outcome_backfill()
+
     _inject_theme_css(st.session_state.get("theme_mode", "system"))
 
     if page == "Screener":
@@ -1543,6 +1413,8 @@ def main() -> None:
         _render_ai_guide()
     elif page == "Backtest":
         _render_backtest()
+    elif page == "Evaluate":
+        _render_evaluate()
     else:
         _render_help()
 

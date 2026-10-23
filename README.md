@@ -49,7 +49,9 @@ A stock **screener + backtester** for US and Canadian markets, with optional
   Jev and explanation calls, as reported by OpenRouter.
 - **Evaluate** — a report that tests whether Jev's judgments actually beat the
   rule-only momentum ranking. Every Jev call is logged with its baseline, then
-  measured against the realized forward return once ~20 trading days pass.
+  measured against the realized forward return once ~20 trading days pass. Both
+  front-ends have it: the Flask `/evaluate` page and the Streamlit **Evaluate** page
+  (which also fills in the outcomes in the background at startup).
 
 ## Setup
 
@@ -198,6 +200,11 @@ The Streamlit app also has an **AI Guide** page that walks through the two AI st
 how Jev's analysis works (what is sent, the questions it answers, how Buy/Verdict
 are reconciled, how the Final score is built, with a worked example) and how
 *Explain with AI* works (what the chat model is given and told, and what it is not).
+
+In the Streamlit app, the text of both pages is plain markdown in
+[`docs/help.md`](docs/help.md) and [`docs/ai-guide.md`](docs/ai-guide.md); edit those
+files to change the pages (a page reload picks up the change). Write a literal dollar
+sign as `\$`, or two of them on one line render as math.
 
 ## Configuration
 
