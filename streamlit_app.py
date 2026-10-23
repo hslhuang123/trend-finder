@@ -278,6 +278,8 @@ html, body, [data-testid="stApp"], [data-testid="stAppViewContainer"], [data-tes
 [data-testid="stNumberInputStepUp"], [data-testid="stNumberInputStepDown"], [data-testid="stTextInputRootElement"] button { background-color: transparent !important; color: $text !important; }
 input, textarea { background-color: transparent !important; color: $text !important; -webkit-text-fill-color: $text !important; caret-color: $text !important; }
 input::placeholder, textarea::placeholder { color: $muted !important; -webkit-text-fill-color: $muted !important; opacity: 1 !important; }
+/* Chrome's autofill / history-preview paints a light-blue fill and its own text colour; repaint it with the surface colour so our text stays legible. */
+input:-webkit-autofill, input:-webkit-autofill:hover, input:-webkit-autofill:focus, input:-webkit-autofill:active { -webkit-text-fill-color: $text !important; caret-color: $text !important; box-shadow: 0 0 0 1000px $surface inset !important; transition: background-color 9999s ease-out 0s; }
 [data-testid="stTextInputRootElement"]:focus-within, [data-testid="stNumberInputContainer"]:focus-within, [data-testid="stMultiSelect"] div[role="group"]:focus-within, [data-testid="stSelectbox"] div[data-rac]:focus-within { border-color: $link !important; }
 [data-testid="stSelectbox"] svg, [data-testid="stMultiSelect"] svg, [data-testid="stNumberInput"] svg, [data-testid="stTooltipIcon"] svg, [data-testid="stTooltipIcon"] button { color: $muted !important; }
 /* Filled chevrons/clear icons need fill; the help icon is stroke-only (fill="none"). */
@@ -761,6 +763,7 @@ def _render_screener() -> None:
         "Screen one or more tickers or company names",
         placeholder="e.g. AAPL, CVE.TO, Rogers  (separate with commas)",
         key="screen_query",
+        autocomplete="off",  # no browser history dropdown / autofill preview in the box
         help="Enter one or more tickers or company names, separated by commas "
              "(e.g. \"AAPL, CVE.TO, Rogers\"). The screener matches each one and "
              "then adds at least five freshly discovered names.",
