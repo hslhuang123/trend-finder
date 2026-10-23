@@ -100,24 +100,38 @@ def _process_answer(answer: dict, state: dict, ticker: str, momentum: float,
     return extracted
 
 
-def analyze_row(row: dict, api_key: str | None = None, consistent: bool = True,
-                reconcile: bool = True) -> dict | None:
-    """Run Jev on one screened row (on demand). None if no key or no answer."""
+def analyze_rows(rows: list[dict], api_key: str | None = None, consistent: bool = True,
+                 reconcile: bool = True) -> dict[str, dict | None]:
+    """Run Jev on the given screened rows (on demand), concurrently.
+
+    Returns {ticker: judgment}; a ticker maps to None when Jev gave no answer, and
+    every ticker maps to None when there is no API key (no calls are made).
+    """
     key = (api_key or config.OPENROUTER_API_KEY or "").strip()
-    if not key:
-        return None
-    state = build_state(row)
-    answer = jev_client.assess_trend(state, api_key=key, consistent=consistent)
-    if not answer:
-        return None
-    return _process_answer(answer, state, row["ticker"], float(row["momentum_score"]), reconcile)
+    if not key or not rows:
+        return {r["ticker"]: None for r in rows}
+    states = [build_state(r) for r in rows]
+    with ThreadPoolExecutor(max_workers=6) as pool_exec:
+        answers = list(pool_exec.map(
+            lambda state: jev_client.assess_trend(state, api_key=key, consistent=consistent),
+            states,
+        ))
+    # Log sequentially (SQLite) after the concurrent network calls.
+    return {
+        row["ticker"]: (
+            _process_answer(answer, state, row["ticker"], float(row["momentum_score"]), reconcile)
+            if answer else None
+        )
+        for row, state, answer in zip(rows, states, answers)
+    }
 
 
-def apply_analysis(meta: dict, ticker: str, jev: dict) -> None:
-    """Attach `jev` to `ticker`'s row in a screen() result, then re-rank and refresh picks."""
+def apply_analyses(meta: dict, analyses: dict[str, dict]) -> None:
+    """Attach judgments ({ticker: jev}) to a screen() result, then re-rank and refresh picks."""
     results = meta["results"]
     for item in results:
-        if item["ticker"] == ticker:
+        jev = analyses.get(item["ticker"])
+        if jev:
             item["jev"] = jev
             item["final_score"] = _final_score(item["momentum_score"], jev)
     results.sort(key=lambda x: x["final_score"], reverse=True)

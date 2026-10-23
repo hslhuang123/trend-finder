@@ -657,7 +657,7 @@ def _render_screener() -> None:
     )
     use_jev = bool(_session_api_key())
     if use_jev:
-        st.caption("AI analysis is on demand — after screening, pick a ticker under *AI analysis* to run Jev on it.")
+        st.caption("AI analysis is on demand — after screening, pick one or more tickers under *AI analysis* to run Jev on them.")
     else:
         st.caption("Add your OpenRouter API key in the sidebar to enable the on-demand AI analysis.")
 
@@ -707,6 +707,7 @@ def _render_screener() -> None:
                 tickers or (st.session_state.screen_results or {}).get("discovered") or []
             )
             st.session_state["backtest_results"] = None
+            st.session_state["ai_tickers"] = []  # previous picks may not be in the new results
 
     results = st.session_state.screen_results
     if results is None:
@@ -755,42 +756,51 @@ def _render_screener() -> None:
     else:
         st.info("No discovered candidate this run — try another exchange or period.")
 
-    # --- On-demand AI analysis of a single ticker (no automatic Jev calls) ---
+    # --- On-demand AI analysis (no automatic Jev calls) ---
     st.subheader("AI analysis")
-    selected = st.selectbox(
-        "Ticker to analyze",
-        [r["ticker"] for r in rows],
-        key="ai_ticker",
-        help="Jev is only called for the ticker you pick here, when you press the button, "
-             "so you control the AI cost.",
+    by_ticker = {r["ticker"]: r for r in rows}
+    selected = st.multiselect(
+        "Tickers to analyze",
+        list(by_ticker),
+        key="ai_tickers",
+        help="Jev is only called for the tickers you pick here, when you press the button "
+             "(one call per ticker), so you control the AI cost.",
     )
-    sel_row = next(r for r in rows if r["ticker"] == selected)
+    chosen = [by_ticker[t] for t in selected if t in by_ticker]
     if not use_jev:
         st.info("Add your OpenRouter API key in the sidebar to run the AI analysis.")
-    else:
-        label_btn = "Re-run AI analysis" if sel_row.get("jev") else "Run AI analysis"
-        if st.button(label_btn, key="ai_run"):
-            with st.spinner(f"Asking Jev about {selected}…"):
-                jev = screener.analyze_row(sel_row, api_key=_session_api_key())
-            if jev:
-                screener.apply_analysis(meta, selected, jev)
+    elif chosen:
+        redo = sum(1 for r in chosen if r.get("jev"))
+        st.caption(f"{len(chosen)} Jev call{'s' if len(chosen) != 1 else ''}"
+                   + (f" — {redo} already analyzed, will be re-run" if redo else ""))
+        if st.button(f"Run AI analysis ({len(chosen)})", key="ai_run"):
+            with st.spinner(f"Asking Jev about {', '.join(r['ticker'] for r in chosen)}…"):
+                answers = screener.analyze_rows(chosen, api_key=_session_api_key())
+            done = {t: j for t, j in answers.items() if j}
+            if done:
+                screener.apply_analyses(meta, done)
+                st.session_state["ai_failed"] = [t for t, j in answers.items() if not j]
                 st.rerun()
             else:
                 st.error("Jev didn't return an answer — check your API key and try again.")
-    j = sel_row.get("jev")
-    if j:
-        q_raw, rk_raw, verdict = j.get("trend_quality"), j.get("risk_at_entry"), j.get("verdict")
-        c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("Quality", f"{_fmt_num(q_raw, 1)} / 2", _quality_word(q_raw) or None, delta_color="off")
-        c2.metric("Risk", f"{_fmt_num(rk_raw, 1)} / 2", _risk_word(rk_raw) or None, delta_color="off")
-        c3.metric("Buy candidate", "yes" if j.get("is_buy_candidate") else "no")
-        c4.metric("Verdict", (verdict or "—").replace("_", " "))
-        c5.metric("Final score", _fmt_num(sel_row.get("final_score"), 3))
-        reason = _verdict_reason(verdict, q_raw, rk_raw)
-        if reason:
-            st.caption(reason)
-    else:
-        st.caption(f"{selected} has not been analyzed yet.")
+    failed = st.session_state.pop("ai_failed", None)
+    if failed:
+        st.warning("No answer from Jev for: " + ", ".join(failed) + ". Try again.")
+    if chosen:
+        table = []
+        for r in chosen:
+            j = r.get("jev") or {}
+            q_raw, rk_raw, verdict = j.get("trend_quality"), j.get("risk_at_entry"), j.get("verdict")
+            table.append({
+                "Ticker": r["ticker"],
+                "Quality": f"{_fmt_num(q_raw, 1)} / 2" if j else "—",
+                "Risk": f"{_fmt_num(rk_raw, 1)} / 2" if j else "—",
+                "Buy candidate": ("yes" if j.get("is_buy_candidate") else "no") if j else "—",
+                "Verdict": (verdict or "—").replace("_", " ") if j else "not analyzed",
+                "Final score": _fmt_num(r.get("final_score"), 3),
+                "Why": (_verdict_reason(verdict, q_raw, rk_raw) or "") if j else "",
+            })
+        st.dataframe(pd.DataFrame(table), width="stretch", hide_index=True)
 
 
 # --------------------------------------------------------------------------- #
@@ -909,7 +919,7 @@ def _render_help() -> None:
         and large-caps (over $10B) separately by their
         return over the period in *Best performers over* (1 day, 5 days, 1 month by default,
         or 3 months); it then ranks everything by momentum. AI judgments (**Jev**) are
-        not run automatically — analyze one ticker at a time under *AI analysis*.
+        not run automatically — pick the tickers to analyze under *AI analysis*.
         Discovered names aren't saved.
 
         **Jev** — to enable the on-demand AI analysis, paste an OpenRouter API key in the
@@ -925,11 +935,11 @@ def _render_help() -> None:
         paste your own OpenRouter API key in the sidebar (get one at
         [openrouter.ai/keys](https://openrouter.ai/keys)); it is kept only for your
         session. The screener never calls it automatically, to save tokens and cost:
-        pick one ticker under *AI analysis* and press **Run AI analysis**. It then rates trend quality, entry risk, momentum
+        pick one or more tickers under *AI analysis* and press **Run AI analysis**. It then rates trend quality, entry risk, momentum
         sustainability, and buy candidacy, then gives a verdict. It never buys or
         sells for you.
 
-        **How to read the AI analysis** (select a ticker under *AI analysis* below the
+        **How to read the AI analysis** (select one or more tickers under *AI analysis* below the
         tables and press **Run AI analysis**; hover its **AI** badge afterwards):
 
         - **Quality (0–2)** — how clear and sustained the uptrend is. **2 = strong**,

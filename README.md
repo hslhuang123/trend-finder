@@ -31,7 +31,7 @@ A stock **screener + backtester** for US and Canadian markets, with optional
   **entry risk**, **momentum sustainability**, **buy candidacy**, and an overall
   **verdict** (buy now / watch / avoid), blended into the final score. The
   Flask screener judges the top candidates automatically; the Streamlit app
-  never calls Jev automatically (to save tokens and cost) — you pick one ticker
+  never calls Jev automatically (to save tokens and cost) — you pick one or more tickers
   under **AI analysis** and press **Run AI analysis**.
 - **Evaluate** — a report that tests whether Jev's judgments actually beat the
   rule-only momentum ranking. Every Jev call is logged with its baseline, then
