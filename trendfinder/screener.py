@@ -13,8 +13,6 @@ from . import company, config, decisions, discover, jev_client, market_data
 
 # Jev's overall verdict shifts the final score the most.
 VERDICT_BONUS = {"buy_now": 0.35, "watch": 0.0, "avoid": -0.45}
-# Order used when topping up discovered names beyond the "buy now" ones.
-_FILL_VERDICT_ORDER = {"buy_now": 0, "watch": 1, "avoid": 2}
 
 
 def compute_momentum_score(row: pd.Series) -> float:
@@ -92,13 +90,49 @@ def _final_score(momentum: float, jev: dict) -> float:
     )
 
 
+def _process_answer(answer: dict, state: dict, ticker: str, momentum: float,
+                    reconcile: bool) -> dict:
+    """Turn Jev's raw answers into the extracted judgment and log the decision."""
+    extracted = _extract_entry(answer)
+    if reconcile:
+        extracted = _reconcile_answers(extracted)
+    decisions.log_entry(state, answer, extracted, ticker, momentum)
+    return extracted
+
+
+def analyze_row(row: dict, api_key: str | None = None, consistent: bool = True,
+                reconcile: bool = True) -> dict | None:
+    """Run Jev on one screened row (on demand). None if no key or no answer."""
+    key = (api_key or config.OPENROUTER_API_KEY or "").strip()
+    if not key:
+        return None
+    state = build_state(row)
+    answer = jev_client.assess_trend(state, api_key=key, consistent=consistent)
+    if not answer:
+        return None
+    return _process_answer(answer, state, row["ticker"], float(row["momentum_score"]), reconcile)
+
+
+def apply_analysis(meta: dict, ticker: str, jev: dict) -> None:
+    """Attach `jev` to `ticker`'s row in a screen() result, then re-rank and refresh picks."""
+    results = meta["results"]
+    for item in results:
+        if item["ticker"] == ticker:
+            item["jev"] = jev
+            item["final_score"] = _final_score(item["momentum_score"], jev)
+    results.sort(key=lambda x: x["final_score"], reverse=True)
+    watch_results = [r for r in results if not r["discovered"]]
+    picks = [r["ticker"] for r in watch_results[: max(0, min(config.AUTO_PICK_COUNT, len(watch_results)))]]
+    for item in results:
+        item["pick"] = item["ticker"] in picks
+    meta["picks"] = picks
+
+
 def screen(use_jev: bool = True, top_n: int = 25, jev_top: int = 25,
            discover_count: int | None = None,
            watchlist: list[str] | None = None,
-           discover_buy_only: bool = False,
            discover_exchange: str | None = None,
            discover_window: str = discover.DEFAULT_WINDOW,
-           discover_fill: bool = False,
            api_key: str | None = None,
            consistent_questions: bool = False,
            reconcile_answers: bool = False) -> dict:
@@ -160,11 +194,9 @@ def screen(use_jev: bool = True, top_n: int = 25, jev_top: int = 25,
             ))
         for (ticker, state, momentum), answer in zip(states, answers):
             if answer:
-                extracted = _extract_entry(answer)
-                if reconcile_answers:
-                    extracted = _reconcile_answers(extracted)
-                jev_by_ticker[ticker] = extracted
-                decisions.log_entry(state, answer, extracted, ticker, momentum)
+                jev_by_ticker[ticker] = _process_answer(
+                    answer, state, ticker, momentum, reconcile_answers
+                )
 
     results: list[dict] = []
     for _, row in df.head(top_n).iterrows():
@@ -179,33 +211,21 @@ def screen(use_jev: bool = True, top_n: int = 25, jev_top: int = 25,
 
     results.sort(key=lambda x: x["final_score"], reverse=True)
 
-    # Surface the discovered candidates with the HIGHEST RETURNS, but pick
-    # randomly from the top few so the surprises vary between runs. When
-    # discover_buy_only is set, keep only names Jev rated "buy now"; with
-    # discover_fill, top up to discover_count from the remaining candidates
-    # (Jev "watch" before "avoid", then by return rank).
+    # Surface the discovered candidates with the HIGHEST RETURNS. With an
+    # explicit exchange they are discover_candidates' ranking (best first over the
+    # chosen window); otherwise pick randomly from the top few so the surprises
+    # vary between runs.
     pool_set = set(pool)
     pool_results = [r for r in results if r["ticker"] in pool_set]
     if discover_exchange:
-        # discover_candidates already ranked these best-first over the chosen window.
         rank = {t: i for i, t in enumerate(pool)}
         pool_results.sort(key=lambda r: rank[r["ticker"]])
+        chosen = pool_results[:discover_count]
     else:
         pool_results.sort(key=lambda r: r["change_5d_pct"], reverse=True)
-    qualified = pool_results
-    if discover_buy_only:
-        qualified = [
-            r for r in pool_results if (r.get("jev") or {}).get("verdict") == "buy_now"
-        ]
-    top_returns = qualified[: max(discover_count * 3, 6)]
-    random.shuffle(top_returns)
-    chosen = top_returns[:discover_count]
-    if discover_fill and len(chosen) < discover_count:
-        chosen_tickers = {r["ticker"] for r in chosen}
-        rest = [r for r in pool_results if r["ticker"] not in chosen_tickers]
-        # sorted() is stable, so rank order is kept within each verdict.
-        rest.sort(key=lambda r: _FILL_VERDICT_ORDER.get((r.get("jev") or {}).get("verdict"), 1))
-        chosen += rest[: discover_count - len(chosen)]
+        top_returns = pool_results[: max(discover_count * 3, 6)]
+        random.shuffle(top_returns)
+        chosen = top_returns[:discover_count]
     discovered = [r["ticker"] for r in chosen]
     disc_set = set(discovered)
     results = [r for r in results if r["ticker"] not in pool_set or r["ticker"] in disc_set]

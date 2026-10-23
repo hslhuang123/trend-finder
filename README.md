@@ -31,7 +31,10 @@ A stock **screener + backtester** for US and Canadian markets, with optional
   AI-vetted.
 - **Jev's entry judgment** — judges each top candidate's **trend quality**,
   **entry risk**, **momentum sustainability**, **buy candidacy**, and an overall
-  **verdict** (buy now / watch / avoid), blended into the final score.
+  **verdict** (buy now / watch / avoid), blended into the final score. The
+  Flask screener judges the top candidates automatically; the Streamlit app
+  never calls Jev automatically (to save tokens and cost) — you pick one ticker
+  under **AI analysis** and press **Run AI analysis**.
 - **Evaluate** — a report that tests whether Jev's judgments actually beat the
   rule-only momentum ranking. Every Jev call is logged with its baseline, then
   measured against the realized forward return once ~20 trading days pass.
@@ -86,7 +89,7 @@ Open <http://127.0.0.1:8501>.
 The Streamlit screener keeps the same overlays as the Flask version: hover a
 **column heading** for its meaning, hover a **ticker** for a price chart popup
 (range buttons 1m/3m/6m/1y), and hover the **AI** badge for Jev's full analysis
-(Quality / Risk / Buy / Verdict / Final). The price-chart ranges are limited to
+(Quality / Risk / Buy / Verdict / Final) once you have analyzed that ticker. The price-chart ranges are limited to
 daily ranges (1m/3m/6m/1y) since the data is precomputed for the iframe; intraday
 (1d/5d) and multi-year (5y/10y) are not included in the Streamlit version.
 

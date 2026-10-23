@@ -497,11 +497,15 @@ def _screener_table_html(results: list[dict], charts: dict | None = None) -> str
             )
             tip_title = "AI Analysis"
         else:
+            if _session_api_key():
+                note = "Not analyzed yet — pick this ticker under AI analysis below to run Jev on it."
+            else:
+                note = "Not analyzed — add an OpenRouter key in the sidebar to enable the AI analysis."
             tip = (
-                "AI is off — add an OpenRouter key in the sidebar to enable it.\n"
-                f"Final: {final} — ranking score (= momentum while AI is off)"
+                f"{note}\n"
+                f"Final: {final} — ranking score (= momentum until analyzed)"
             )
-            tip_title = "AI off"
+            tip_title = "No AI analysis"
 
         marks = ""
         if r.get("pick"):
@@ -553,7 +557,7 @@ def _screener_table_html(results: list[dict], charts: dict | None = None) -> str
         "<th data-tip=\"1\" data-name=\"Vol×\" data-desc=\"Volume ratio: 5-day average volume divided by the 20-day average. Above 1 means busier than usual.\">Vol×</th>"
         "<th data-tip=\"1\" data-name=\"ATR %\" data-desc=\"Average True Range as a percent of price, a volatility measure. Higher means bigger swings.\">ATR %</th>"
         "<th data-tip=\"1\" data-name=\"Momentum\" data-desc=\"The app's technical score from 5-day return, distance above the 20-day average, volume and RSI, minus an ATR penalty. Roughly -1 to +1.\">Momentum</th>"
-        "<th data-tip=\"1\" data-name=\"AI\" data-desc=\"AI analysis. Hover (or tap) a row's AI badge to see Quality, Risk, Buy, Verdict and Final.\">AI</th>"
+        "<th data-tip=\"1\" data-name=\"AI\" data-desc=\"AI analysis, filled in only for tickers you analyze on demand (see AI analysis below the tables). Hover a row's AI badge to see Quality, Risk, Buy, Verdict and Final.\">AI</th>"
         "<th></th>"
         "</tr></thead>"
     )
@@ -596,7 +600,7 @@ def _render_screener() -> None:
         key="screen_query",
         help="Enter one or more tickers or company names, separated by commas "
              "(e.g. \"AAPL, CVE.TO, Rogers\"). The screener matches each one and "
-             "then adds at least five freshly discovered names (rated 'buy now' when Jev is on).",
+             "then adds at least five freshly discovered names.",
     )
     col_exchange, col_window = st.columns(2)
     exchange = col_exchange.selectbox(
@@ -619,9 +623,9 @@ def _render_screener() -> None:
     )
     use_jev = bool(_session_api_key())
     if use_jev:
-        st.caption("Jev is on — it will judge the entrants.")
+        st.caption("AI analysis is on demand — after screening, pick a ticker under *AI analysis* to run Jev on it.")
     else:
-        st.caption("Jev is off — add your OpenRouter API key in the sidebar to enable it.")
+        st.caption("Add your OpenRouter API key in the sidebar to enable the on-demand AI analysis.")
 
     if st.button("Run screener", type="primary"):
         tokens = [t.strip() for t in re.split(r"[,\n;]+", query) if t.strip()]
@@ -645,18 +649,16 @@ def _render_screener() -> None:
             # With nothing typed, run discovery alone.
             label = ", ".join(tickers) or "discovery only"
             spinner = (
-                f"Screening {label} + {DISCOVER_COUNT} discovered from {exchange}… (Jev calls can take ~1 min)"
+                f"Screening {label} + {DISCOVER_COUNT} discovered from {exchange}…"
                 if tickers else
-                f"Discovering from {exchange}… (Jev calls can take ~30s)"
+                f"Discovering from {exchange}…"
             )
             with st.spinner(spinner):
+                # use_jev=False: no automatic AI calls; analysis is on demand below.
                 st.session_state.screen_results = screener.screen(
-                    use_jev=use_jev, watchlist=tickers, discover_count=DISCOVER_COUNT,
-                    top_n=50, jev_top=50,  # judge every candidate, not just the strongest 25
-                    discover_buy_only=use_jev, discover_fill=True,
+                    use_jev=False, watchlist=tickers, discover_count=DISCOVER_COUNT,
+                    top_n=50,  # keep every discovered candidate
                     discover_exchange=exchange, discover_window=window,
-                    api_key=_session_api_key(),
-                    consistent_questions=True, reconcile_answers=True,
                 )
             # Precompute price history so the hover chart popup works (no API in the
             # iframe). Stored in session_state so it's not refetched on every rerun.
@@ -680,8 +682,7 @@ def _render_screener() -> None:
 
     meta = results
     label = st.session_state.get("screen_label", "")
-    st.success(f"Scanned {meta.get('scanned', 0)} tickers at {meta.get('generated_at')} "
-               f"· Jev {'on' if meta.get('jev_enabled') else 'off'}"
+    st.success(f"Scanned {meta.get('scanned', 0)} tickers at {meta.get('generated_at')}"
                + (f" · {label}" if label else ""))
 
     picks = meta.get("picks", [])
@@ -709,21 +710,50 @@ def _render_screener() -> None:
         disc_height = min(150 + 42 * len(disc_rows), 720)
         st.iframe(_screener_table_html(disc_rows, charts), height=disc_height)
         n = len(disc_rows)
-        names = f"{n} freshly discovered name{'s' if n != 1 else ''}"
-        if meta.get("jev_enabled"):
-            n_buy = sum(1 for r in disc_rows if (r.get("jev") or {}).get("verdict") == "buy_now")
-            detail = (
-                "all rated **buy now**" if n_buy == n else
-                f"{n_buy} rated **buy now**; the rest are the next-best by return — check each AI badge"
-            )
-            st.caption(f"{names} — {detail}. Shown for this run only, never saved.")
-        else:
-            st.caption(f"{names} (top performers, not AI-vetted — Jev is off). Shown for this run only, never saved.")
+        st.caption(f"{n} freshly discovered top performer{'s' if n != 1 else ''}. "
+                   "Shown for this run only, never saved.")
         if n < DISCOVER_COUNT:
             st.info(f"Only {n} candidate{'s' if n != 1 else ''} found on this exchange for this period — "
                     "try another exchange or period.")
     else:
         st.info("No discovered candidate this run — try another exchange or period.")
+
+    # --- On-demand AI analysis of a single ticker (no automatic Jev calls) ---
+    st.subheader("AI analysis")
+    selected = st.selectbox(
+        "Ticker to analyze",
+        [r["ticker"] for r in rows],
+        key="ai_ticker",
+        help="Jev is only called for the ticker you pick here, when you press the button, "
+             "so you control the AI cost.",
+    )
+    sel_row = next(r for r in rows if r["ticker"] == selected)
+    if not use_jev:
+        st.info("Add your OpenRouter API key in the sidebar to run the AI analysis.")
+    else:
+        label_btn = "Re-run AI analysis" if sel_row.get("jev") else "Run AI analysis"
+        if st.button(label_btn, key="ai_run"):
+            with st.spinner(f"Asking Jev about {selected}…"):
+                jev = screener.analyze_row(sel_row, api_key=_session_api_key())
+            if jev:
+                screener.apply_analysis(meta, selected, jev)
+                st.rerun()
+            else:
+                st.error("Jev didn't return an answer — check your API key and try again.")
+    j = sel_row.get("jev")
+    if j:
+        q_raw, rk_raw, verdict = j.get("trend_quality"), j.get("risk_at_entry"), j.get("verdict")
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("Quality", f"{_fmt_num(q_raw, 1)} / 2", _quality_word(q_raw) or None, delta_color="off")
+        c2.metric("Risk", f"{_fmt_num(rk_raw, 1)} / 2", _risk_word(rk_raw) or None, delta_color="off")
+        c3.metric("Buy candidate", "yes" if j.get("is_buy_candidate") else "no")
+        c4.metric("Verdict", (verdict or "—").replace("_", " "))
+        c5.metric("Final score", _fmt_num(sel_row.get("final_score"), 3))
+        reason = _verdict_reason(verdict, q_raw, rk_raw)
+        if reason:
+            st.caption(reason)
+    else:
+        st.caption(f"{selected} has not been analyzed yet.")
 
 
 # --------------------------------------------------------------------------- #
@@ -836,15 +866,15 @@ def _render_help() -> None:
         is real advice.
 
         **Screener** — enter one or more tickers or company names (separate them with
-        commas); it checks those plus at least five **discovered** names (🔍; Jev "buy now" names first, topped up with the next-best) from the
+        commas); it checks those plus at least five **discovered** names (🔍) from the
         **exchange you pick** in the *Discover from exchange* dropdown (TSX by default;
         also TSXV, NASDAQ, NYSE, NYSE American) and ranks that exchange's mid-caps by their
         return over the period in *Best performers over* (1 day, 5 days, 1 month by default,
-        or 3 months); it then ranks everything by momentum and enriches it with **Jev's**
-        judgment (trend quality, entry risk, buy candidacy, and a verdict).
+        or 3 months); it then ranks everything by momentum. AI judgments (**Jev**) are
+        not run automatically — analyze one ticker at a time under *AI analysis*.
         Discovered names aren't saved.
 
-        **Jev** — to enable Jev's judgments, paste an OpenRouter API key in the
+        **Jev** — to enable the on-demand AI analysis, paste an OpenRouter API key in the
         sidebar. The key is kept only for your session; leave it blank to use the
         server's key, if one is configured.
 
@@ -856,11 +886,13 @@ def _render_help() -> None:
         **Jev** — an AI judgment layer that runs on **OpenRouter**. To enable it,
         paste your own OpenRouter API key in the sidebar (get one at
         [openrouter.ai/keys](https://openrouter.ai/keys)); it is kept only for your
-        session. When enabled it rates trend quality, entry risk, momentum
+        session. The screener never calls it automatically, to save tokens and cost:
+        pick one ticker under *AI analysis* and press **Run AI analysis**. It then rates trend quality, entry risk, momentum
         sustainability, and buy candidacy, then gives a verdict. It never buys or
         sells for you.
 
-        **How to read the AI analysis** (hover the **AI** badge in the screener table):
+        **How to read the AI analysis** (select a ticker under *AI analysis* below the
+        tables and press **Run AI analysis**; hover its **AI** badge afterwards):
 
         - **Quality (0–2)** — how clear and sustained the uptrend is. **2 = strong**,
           1 = moderate, 0 = weak/choppy. Higher is better.
@@ -908,8 +940,9 @@ def _render_help() -> None:
           clamped to −1…+1, then combined: **0.30 × (5d return ÷ 10) + 0.25 × (% above
           the 20-day average ÷ 5) + 0.20 × ((volume ratio − 1) ÷ 2) + 0.15 × ((RSI − 50)
           ÷ 25) − 0.10 × (ATR% ÷ 10, floored at 0)**.
-        - **AI** — the AI's judgment. Hover the badge for Quality, Risk, Buy, Verdict and
-          Final (see "How to read the AI analysis" above).
+        - **AI** — the AI's judgment, filled in only for tickers you analyze on demand.
+          Hover the badge for Quality, Risk, Buy, Verdict and Final (see "How to read
+          the AI analysis" above).
 
         **Backtest summary**
 
