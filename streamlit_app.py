@@ -27,6 +27,7 @@ from trendfinder import (
     backtest,
     company,
     config,
+    costs,
     decisions,
     discover,
     explain,
@@ -52,6 +53,36 @@ def _session_api_key() -> str:
     Falls back to the server's environment key when the box is left blank.
     """
     return (st.session_state.get("openrouter_key") or "").strip() or _ENV_OPENROUTER_KEY
+
+
+def _costs() -> costs.CostLog:
+    """This browser session's running OpenRouter spend (Jev + explanation calls)."""
+    if "cost_log" not in st.session_state:
+        st.session_state["cost_log"] = costs.CostLog()
+    return st.session_state["cost_log"]
+
+
+def _explain_model_id() -> str:
+    """OpenRouter id of the model picked in the sidebar (default if not picked yet)."""
+    options = explain.model_options()
+    label = st.session_state.get("explain_model_label")
+    return options.get(label, options[explain.default_label()])["id"]
+
+
+def _render_session_cost(slot) -> None:
+    """Fill the sidebar slot with what this session has spent so far."""
+    log = _costs()
+    with slot.container():
+        # `$` is escaped: two bare dollar signs in one markdown block render as LaTeX.
+        st.markdown(f"**Session cost: \\${log.usd():.5f}**")
+        def calls(kind: str) -> str:
+            n = log.calls(kind)
+            return f"{n} call{'s' if n != 1 else ''}"
+
+        st.caption(f"Jev \\${log.usd('jev'):.5f} ({calls('jev')}) · "
+                   f"Explanations \\${log.usd('explain'):.5f} ({calls('explain')})")
+        st.caption("As reported by OpenRouter. Resets when you reload the page.")
+
 
 # Make sure the decision-log tables exist (used by the screener).
 decisions.init_db()
@@ -990,7 +1021,8 @@ def _render_screener() -> None:
                    + (f" — {redo} already analyzed, will be re-run" if redo else ""))
         if st.button(f"Run AI analysis ({len(chosen)})", key="ai_run"):
             with st.spinner(f"Asking Jev about {', '.join(r['ticker'] for r in chosen)}…"):
-                answers = screener.analyze_rows(chosen, api_key=_session_api_key(), use_news=use_news)
+                answers = screener.analyze_rows(chosen, api_key=_session_api_key(),
+                                                use_news=use_news, cost_log=_costs())
             done = {t: j for t, j in answers.items() if j}
             if done:
                 screener.apply_analyses(meta, done)
@@ -1032,14 +1064,18 @@ def _render_screener() -> None:
         analyzed = [r for r in chosen if (r.get("jev") or {}).get("verdict")]
         if use_jev and analyzed:
             if st.button(f"Explain with AI ({len(analyzed)})", key="ai_explain",
-                         help=f"A chat model ({config.EXPLAIN_MODEL}) writes a short plain-English "
-                              "reason for each analyzed ticker's verdict from Jev's answers. "
-                              "One small call per ticker (about $0.0001 each)."):
+                         help=f"The selected chat model ({_explain_model_id()}) writes a short "
+                              "plain-English reason for each analyzed ticker's verdict from Jev's "
+                              "answers. One small call per ticker; the cost is added to the "
+                              "session total in the sidebar."):
+                model_id = _explain_model_id()
                 with st.spinner("Writing explanations…"):
-                    texts = explain.explain_rows(analyzed, api_key=_session_api_key())
+                    texts = explain.explain_rows(analyzed, api_key=_session_api_key(),
+                                                 model=model_id, cost_log=_costs())
                 for r in analyzed:
                     if texts.get(r["ticker"]):
                         r["explanation"] = texts[r["ticker"]]
+                        r["explanation_model"] = model_id
                 st.session_state["explain_failed"] = [t for t, x in texts.items() if not x]
                 st.rerun()
         failed_explain = st.session_state.pop("explain_failed", None)
@@ -1049,8 +1085,9 @@ def _render_screener() -> None:
         for r in explained:
             st.markdown(f"**{r['ticker']}** — {_md_escape(r['explanation'])}")
         if explained:
-            st.caption(f"Written by {config.EXPLAIN_MODEL} from Jev's answers and the stock's numbers — "
-                       "not Jev's own reasoning. It also shows in the AI badge popup.")
+            used = sorted({r["explanation_model"] for r in explained if r.get("explanation_model")})
+            st.caption(f"Written by {', '.join(used) or 'a chat model'} from Jev's answers and the "
+                       "stock's numbers — not Jev's own reasoning. It also shows in the AI badge popup.")
         for r in chosen:
             headlines = (r.get("jev") or {}).get("headlines")
             if headlines is None:
@@ -1207,8 +1244,11 @@ def _render_help() -> None:
         **How to read the AI analysis** (select one or more tickers under *AI analysis* below the
         tables and press **Run AI analysis**; hover its **AI** badge afterwards — its
         **Why** line explains the verdict in plain English. Press **Explain with AI** to
-        have a small chat model (DeepSeek V4 Flash, about $0.0001 per ticker) write that
-        explanation instead; it explains Jev's answer, since Jev itself returns only scores):
+        have a small chat model write that explanation instead (pick the model under
+        *Explanation model* in the sidebar; DeepSeek V4 Flash is the default); it
+        explains Jev's answer, since Jev itself returns only scores. The sidebar's
+        **Session cost** adds up what Jev and the explanations have cost since you
+        opened the page, as reported by OpenRouter):
 
         - **Quality (0–2)** — how clear and sustained the uptrend is. **2 = strong**,
           1 = moderate, 0 = weak/choppy. Higher is better.
@@ -1335,6 +1375,21 @@ def main() -> None:
         st.caption(f"Jev: {jev}")
         st.caption(f"Model: `{config.JEV_MODEL}`")
 
+        labels = list(explain.model_options())
+        st.selectbox(
+            "Explanation model",
+            labels,
+            index=labels.index(explain.default_label()),
+            key="explain_model_label",
+            help="The chat model behind **Explain with AI**. Jev itself only returns scores, "
+                 "so this model writes the plain-English reason from Jev's answers. Rough cost "
+                 "per explanation (with news): DeepSeek V4 Flash \\$0.00005, V4 Pro \\$0.0005, "
+                 "GLM 5.3 Flash \\$0.00005, Ling 3.0 Flash \\$0.00002, Mistral Nemo \\$0.00001. "
+                 "The cheapest models word things more plainly and can stretch the facts; "
+                 "DeepSeek V4 Flash is the default.",
+        )
+        cost_slot = st.empty()  # filled at the end of the run, once this run's calls are counted
+
     _inject_theme_css(st.session_state.get("theme_mode", "system"))
 
     if page == "Screener":
@@ -1344,6 +1399,7 @@ def main() -> None:
     else:
         _render_help()
 
+    _render_session_cost(cost_slot)
     st.caption("Educational only. Not investment advice.")
 
 

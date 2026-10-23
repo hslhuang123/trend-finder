@@ -9,11 +9,13 @@ from __future__ import annotations
 import requests
 
 from . import config
+from .costs import CostLog
 
 DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions"
 
 
-def _ask(state: dict, questions: dict, api_key: str | None = None) -> dict | None:
+def _ask(state: dict, questions: dict, api_key: str | None = None,
+         cost_log: CostLog | None = None) -> dict | None:
     """Send a state + typed questions to Jev. Returns the answers dict, or None.
 
     `api_key` is resolved per call (falling back to the configured environment
@@ -37,6 +39,9 @@ def _ask(state: dict, questions: dict, api_key: str | None = None) -> dict | Non
         print(f"[jev] request failed: {exc}")
         return None
 
+    if cost_log is not None and isinstance(data, dict):
+        cost_log.add("jev", (data.get("usage") or {}).get("cost"))
+
     if isinstance(data, dict) and "answers" in data:
         return data["answers"]
     if isinstance(data, dict) and isinstance(data.get("data"), dict):
@@ -46,7 +51,7 @@ def _ask(state: dict, questions: dict, api_key: str | None = None) -> dict | Non
 
 
 def assess_trend(state: dict, api_key: str | None = None,
-                 consistent: bool = False) -> dict | None:
+                 consistent: bool = False, cost_log: CostLog | None = None) -> dict | None:
     """Entry-side: is this a good stock to buy right now?
 
     When `consistent` is True (used by the Streamlit app), the `is_buy_candidate`
@@ -136,7 +141,7 @@ def assess_trend(state: dict, api_key: str | None = None,
             " Also weigh the recent news headlines: a clear negative catalyst argues "
             "against 'buy_now'."
         )
-    return _ask(state, questions, api_key=api_key)
+    return _ask(state, questions, api_key=api_key, cost_log=cost_log)
 
 
 def _news_questions() -> dict:

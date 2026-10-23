@@ -40,9 +40,12 @@ A stock **screener + backtester** for US and Canadian markets, with optional
   rates the news tone and any catalyst; untick *Include news* to skip it. The
   headlines are listed under the results table. The AI badge popup has a
   plain-English **Why** line (built in, free); **Explain with AI** replaces it with
-  a short explanation from a small chat model (`EXPLAIN_MODEL`, ~$0.0001 per
-  ticker). Jev only returns scores, so that text explains Jev's answer rather than
-  being Jev's own reasoning.
+  a short explanation from a small chat model, chosen in the sidebar's
+  *Explanation model* dropdown (DeepSeek V4 Flash by default, or DeepSeek V4 Pro,
+  GLM 5.3 Flash, Ling 3.0 Flash, Mistral Nemo; `EXPLAIN_MODEL` sets the default).
+  Jev only returns scores, so that text explains Jev's answer rather than being
+  Jev's own reasoning. The sidebar also shows a running **Session cost** for the
+  Jev and explanation calls, as reported by OpenRouter.
 - **Evaluate** — a report that tests whether Jev's judgments actually beat the
   rule-only momentum ranking. Every Jev call is logged with its baseline, then
   measured against the realized forward return once ~20 trading days pass.

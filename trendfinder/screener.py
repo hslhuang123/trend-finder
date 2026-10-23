@@ -10,6 +10,7 @@ from datetime import datetime
 import pandas as pd
 
 from . import company, config, decisions, discover, jev_client, market_data, news
+from .costs import CostLog
 
 # Jev's overall verdict shifts the final score the most.
 VERDICT_BONUS = {"buy_now": 0.35, "watch": 0.0, "avoid": -0.45}
@@ -119,7 +120,8 @@ def _process_answer(answer: dict, state: dict, ticker: str, momentum: float,
 
 
 def analyze_rows(rows: list[dict], api_key: str | None = None, consistent: bool = True,
-                 reconcile: bool = True, use_news: bool = True) -> dict[str, dict | None]:
+                 reconcile: bool = True, use_news: bool = True,
+                 cost_log: CostLog | None = None) -> dict[str, dict | None]:
     """Run Jev on the given screened rows (on demand), concurrently.
 
     With `use_news`, each ticker's last-7-days headlines are fetched and sent with
@@ -139,7 +141,8 @@ def analyze_rows(rows: list[dict], api_key: str | None = None, consistent: bool 
         if use_news:
             headlines = news.fetch((row.get("company") or {}).get("name") or "", row["ticker"])
         state = build_state(row, headlines)
-        return state, headlines, jev_client.assess_trend(state, api_key=key, consistent=consistent)
+        return state, headlines, jev_client.assess_trend(
+            state, api_key=key, consistent=consistent, cost_log=cost_log)
 
     with ThreadPoolExecutor(max_workers=6) as pool_exec:
         asked = list(pool_exec.map(ask, rows))
@@ -168,6 +171,7 @@ def apply_analyses(meta: dict, analyses: dict[str, dict]) -> None:
             item["jev"] = jev
             item["final_score"] = _final_score(item["momentum_score"], jev)
             item.pop("explanation", None)  # a stale explanation no longer matches
+            item.pop("explanation_model", None)
     results.sort(key=lambda x: x["final_score"], reverse=True)
     watch_results = [r for r in results if not r["discovered"]]
     picks = [r["ticker"] for r in watch_results[: max(0, min(config.AUTO_PICK_COUNT, len(watch_results)))]]
