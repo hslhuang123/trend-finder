@@ -77,6 +77,39 @@ def _fmt_market_cap(v: float | None, currency: str = "USD") -> str:
     return f"{sym}{v:,.0f}"
 
 
+# Market-cap class pill shown next to each ticker in the screener tables. It sits in
+# the ticker cell (not its own column) so the shared mobile CSS, which hides columns
+# by position, keeps working.
+_CAP_TAG_CSS = """
+.cap-tag { display: inline-block; margin-left: 6px; padding: 0 6px; border: 1px solid; border-radius: 9px;
+  font-size: 10px; font-weight: 600; line-height: 16px; text-transform: uppercase; letter-spacing: .03em; vertical-align: middle; }
+.cap-large { color: #2f81f7; }
+.cap-mid { color: #a371f7; }
+.cap-small { color: var(--muted, #8b949e); }
+"""
+
+
+def _cap_tag(market_cap: float | None, band: str | None = None) -> str:
+    """HTML pill: Large (>= the mid-cap ceiling), Mid, or Small cap.
+
+    Classified from the listing-currency market cap against the discovery bands
+    (config.DISCOVER_MIN/MAX_MARKET_CAP); falls back to the discovery band when the
+    market cap is unknown. Empty when neither is known.
+    """
+    if market_cap:
+        if market_cap >= config.DISCOVER_MAX_MARKET_CAP:
+            key = "large"
+        elif market_cap >= config.DISCOVER_MIN_MARKET_CAP:
+            key = "mid"
+        else:
+            key = "small"
+    elif band:
+        key = band.split("-")[0]
+    else:
+        return ""
+    return f'<span class="cap-tag cap-{key}" title="{key.title()}-cap company">{key.title()}</span>'
+
+
 def _fmt_num(v: float | None, digits: int = 2) -> str:
     return "—" if v is None else f"{v:.{digits}f}"
 
@@ -518,7 +551,8 @@ def _screener_table_html(results: list[dict], charts: dict | None = None) -> str
         ticker_cell = (
             f"<td class=\"ticker-cell\">{marks}"
             f"<span class=\"{ticker_cls}\" data-tip=\"1\" data-ticker=\"{esc(r['ticker'])}\" "
-            f"data-name=\"{esc(name)}\" data-desc=\"{esc(desc)}\">{esc(r['ticker'])}</span></td>"
+            f"data-name=\"{esc(name)}\" data-desc=\"{esc(desc)}\">{esc(r['ticker'])}</span>"
+            f"{_cap_tag(co.get('market_cap'), r.get('cap_band'))}</td>"
         )
         ai_cell = (
             f"<td class=\"ai-cell\"><span class=\"ai-badge {badge_cls(verdict)}\" "
@@ -548,7 +582,7 @@ def _screener_table_html(results: list[dict], charts: dict | None = None) -> str
     headers = (
         "<thead><tr>"
         "<th data-tip=\"1\" data-name=\"#\" data-desc=\"Rank by Final score, best first.\">#</th>"
-        "<th data-tip=\"1\" data-name=\"Ticker\" data-desc=\"Stock symbol. Hover the ticker itself for the company name and description.\">Ticker</th>"
+        "<th data-tip=\"1\" data-name=\"Ticker\" data-desc=\"Stock symbol, with a Large / Mid / Small market-cap tag. Hover the ticker itself for the company name and description.\">Ticker</th>"
         "<th data-tip=\"1\" data-name=\"Price\" data-desc=\"Latest delayed closing price.\">Price</th>"
         "<th data-tip=\"1\" data-name=\"Market cap\" data-desc=\"Market capitalization: total value of the company's shares (latest available). C$ means Canadian dollars.\">Market cap</th>"
         "<th data-tip=\"1\" data-name=\"1d %\" data-desc=\"Percent change from the previous close.\">1d %</th>"
@@ -563,7 +597,7 @@ def _screener_table_html(results: list[dict], charts: dict | None = None) -> str
     )
     return (
         "<!doctype html><html" + theme_attr + "><head><meta charset=\"utf-8\">"
-        f"<style>{_load_static_css()}</style></head><body>"
+        f"<style>{_load_static_css()}{_CAP_TAG_CSS}</style></head><body>"
         + "<div class=\"table-wrap\"><table id=\"screen-table\">" + headers
         + "<tbody>" + "".join(rows) + "</tbody></table></div>"
         + "<div class=\"tooltip\" id=\"tf-tip\"><div class=\"tip-title\"></div><div class=\"tip-desc\"></div></div>"
@@ -929,6 +963,8 @@ def _render_help() -> None:
 
         - **#** — rank, best Final score first.
         - **Ticker** — the stock symbol. Hover it for the company name and a price chart.
+          The pill beside it shows its size: **Large** (market cap over $10B), **Mid**
+          ($2B–$10B) or **Small** (under $2B), in the listing's own currency.
         - **Price** — latest (delayed) closing price.
         - **Market cap** — total value of the company = share price × shares outstanding.
         - **1d %** — (price ÷ previous close − 1) × 100.
