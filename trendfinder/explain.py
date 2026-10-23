@@ -8,6 +8,7 @@ answer, not Jev's own reasoning.
 from __future__ import annotations
 
 import json
+import re
 from concurrent.futures import ThreadPoolExecutor
 
 import requests
@@ -47,6 +48,17 @@ def default_label() -> str:
         if spec["id"] == config.EXPLAIN_MODEL:
             return label
     return next(iter(model_options()))
+
+
+# Selectbox entry that lets the user type any OpenRouter model id.
+CUSTOM_LABEL = "Custom model…"
+
+_MODEL_ID = re.compile(r"[\w.\-]+/[\w.\-:+]+")
+
+
+def valid_model_id(model_id: str) -> bool:
+    """True when `model_id` looks like an OpenRouter id, e.g. 'anthropic/claude-haiku-4.5'."""
+    return _MODEL_ID.fullmatch(model_id) is not None
 
 
 def _spec(model: str | None) -> dict:
@@ -120,8 +132,17 @@ def explain(row: dict, api_key: str | None = None, model: str | None = None,
     if not spec.get("reasoning"):
         payload["reasoning"] = {"enabled": False}
     try:
-        resp = requests.post(CHAT_URL, headers={"Authorization": f"Bearer {key}"},
-                             json=payload, timeout=60)
+        def post() -> requests.Response:
+            return requests.post(CHAT_URL, headers={"Authorization": f"Bearer {key}"},
+                                 json=payload, timeout=60)
+
+        resp = post()
+        if resp.status_code == 400 and "reasoning" in payload:
+            # Some models (any a user types in) cannot switch reasoning off. Retry with
+            # the model's own default and enough room to think before it answers.
+            del payload["reasoning"]
+            payload["max_tokens"] = max(payload["max_tokens"], 1200)
+            resp = post()
         resp.raise_for_status()
         data = resp.json()
         text = (data["choices"][0]["message"]["content"] or "").strip()

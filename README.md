@@ -42,7 +42,8 @@ A stock **screener + backtester** for US and Canadian markets, with optional
   plain-English **Why** line (built in, free); **Explain with AI** replaces it with
   a short explanation from a small chat model, chosen in the sidebar's
   *Explanation model* dropdown (DeepSeek V4 Flash by default, or DeepSeek V4 Pro,
-  GLM 5.3 Flash, Ling 3.0 Flash, Mistral Nemo; `EXPLAIN_MODEL` sets the default).
+  GLM 5.3 Flash, Ling 3.0 Flash, Mistral Nemo, or *Custom model…* to type any
+  OpenRouter model id; `EXPLAIN_MODEL` sets the default).
   Jev only returns scores, so that text explains Jev's answer rather than being
   Jev's own reasoning. The sidebar also shows a running **Session cost** for the
   Jev and explanation calls, as reported by OpenRouter.

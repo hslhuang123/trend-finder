@@ -62,10 +62,16 @@ def _costs() -> costs.CostLog:
     return st.session_state["cost_log"]
 
 
-def _explain_model_id() -> str:
-    """OpenRouter id of the model picked in the sidebar (default if not picked yet)."""
-    options = explain.model_options()
+def _explain_model_id() -> str | None:
+    """OpenRouter id of the model picked in the sidebar (default if not picked yet).
+
+    None when *Custom model…* is picked but the typed id is empty or malformed.
+    """
     label = st.session_state.get("explain_model_label")
+    if label == explain.CUSTOM_LABEL:
+        custom = (st.session_state.get("explain_custom_model") or "").strip()
+        return custom if explain.valid_model_id(custom) else None
+    options = explain.model_options()
     return options.get(label, options[explain.default_label()])["id"]
 
 
@@ -1063,12 +1069,15 @@ def _render_screener() -> None:
         st.markdown(_html_table(pd.DataFrame(table), numeric=("Final score",)), unsafe_allow_html=True)
         analyzed = [r for r in chosen if (r.get("jev") or {}).get("verdict")]
         if use_jev and analyzed:
+            model_id = _explain_model_id()
             if st.button(f"Explain with AI ({len(analyzed)})", key="ai_explain",
-                         help=f"The selected chat model ({_explain_model_id()}) writes a short "
+                         disabled=model_id is None,
+                         help="Enter a valid model id under *Explanation model* in the sidebar first."
+                              if model_id is None else
+                              f"The selected chat model ({model_id}) writes a short "
                               "plain-English reason for each analyzed ticker's verdict from Jev's "
                               "answers. One small call per ticker; the cost is added to the "
                               "session total in the sidebar."):
-                model_id = _explain_model_id()
                 with st.spinner("Writing explanations…"):
                     texts = explain.explain_rows(analyzed, api_key=_session_api_key(),
                                                  model=model_id, cost_log=_costs())
@@ -1245,7 +1254,8 @@ def _render_help() -> None:
         tables and press **Run AI analysis**; hover its **AI** badge afterwards — its
         **Why** line explains the verdict in plain English. Press **Explain with AI** to
         have a small chat model write that explanation instead (pick the model under
-        *Explanation model* in the sidebar; DeepSeek V4 Flash is the default); it
+        *Explanation model* in the sidebar, or choose *Custom model…* and type any
+        OpenRouter id such as `vendor/model-name`; DeepSeek V4 Flash is the default); it
         explains Jev's answer, since Jev itself returns only scores. The sidebar's
         **Session cost** adds up what Jev and the explanations have cost since you
         opened the page, as reported by OpenRouter):
@@ -1375,8 +1385,8 @@ def main() -> None:
         st.caption(f"Jev: {jev}")
         st.caption(f"Model: `{config.JEV_MODEL}`")
 
-        labels = list(explain.model_options())
-        st.selectbox(
+        labels = [*explain.model_options(), explain.CUSTOM_LABEL]
+        picked = st.selectbox(
             "Explanation model",
             labels,
             index=labels.index(explain.default_label()),
@@ -1386,8 +1396,22 @@ def main() -> None:
                  "per explanation (with news): DeepSeek V4 Flash \\$0.00005, V4 Pro \\$0.0005, "
                  "GLM 5.3 Flash \\$0.00005, Ling 3.0 Flash \\$0.00002, Mistral Nemo \\$0.00001. "
                  "The cheapest models word things more plainly and can stretch the facts; "
-                 "DeepSeek V4 Flash is the default.",
+                 "DeepSeek V4 Flash is the default. Choose *Custom model…* to type any "
+                 "OpenRouter model id.",
         )
+        if picked == explain.CUSTOM_LABEL:
+            custom = st.text_input(
+                "OpenRouter model id",
+                key="explain_custom_model",
+                placeholder="vendor/model-name",
+                help="Any chat model on openrouter.ai/models, copied as 'vendor/model-name'. "
+                     "It is billed to your OpenRouter key; the session cost below shows what it "
+                     "spends. Models that always reason may cost more and take longer.",
+            ).strip()
+            if not custom:
+                st.caption("Enter a model id to use it for **Explain with AI**.")
+            elif not explain.valid_model_id(custom):
+                st.warning("Model ids look like `vendor/model-name`.")
         cost_slot = st.empty()  # filled at the end of the run, once this run's calls are counted
 
     _inject_theme_css(st.session_state.get("theme_mode", "system"))
