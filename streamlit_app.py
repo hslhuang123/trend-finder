@@ -251,6 +251,65 @@ def _verdict_reason(verdict, quality, risk) -> str:
     return ""
 
 
+def _why_verdict(r: dict) -> str:
+    """Plain-English explanation of Jev's verdict for a screened row: its ratings,
+    what looks stretched in the stock's own numbers, and what the news added."""
+    j = r.get("jev") or {}
+    verdict, quality, risk = j.get("verdict"), j.get("trend_quality"), j.get("risk_at_entry")
+    if not verdict or quality is None or risk is None:
+        return ""
+    trend = ("strong" if quality >= 1.5 else "decent" if quality >= 0.5 else "weak and choppy")
+    risk_word = "low" if risk < 0.5 else "moderate" if risk < 1.5 else "high"
+
+    stretched = []
+    rsi, ma20, d5, atr = r.get("rsi"), r.get("above_ma20_pct"), r.get("change_5d_pct"), r.get("atr_pct")
+    if d5 is not None and d5 >= 10:
+        stretched.append(f"it is already up {d5:.0f}% in 5 days")
+    if ma20 is not None and ma20 >= 10:
+        stretched.append(f"its price is {ma20:.0f}% above its 20-day average")
+    if rsi is not None and rsi >= 70:
+        stretched.append(f"it looks overbought (RSI {rsi:.0f})")
+    if atr is not None and atr >= 5:
+        stretched.append(f"it swings a lot (about {atr:.0f}% a day)")
+    because = ("That's because " + ", ".join(stretched[:-1]) + (" and " if len(stretched) > 1 else "")
+               + stretched[-1] + ".") if stretched else ""
+
+    negative_news = j.get("news_catalyst") == "negative"
+    if verdict == "buy_now":
+        parts = [f"The trend is {trend} and the risk of buying now is {risk_word} "
+                 f"({risk:.1f} out of 2), so this looks like a good moment to buy."]
+    elif verdict == "watch":
+        if negative_news:
+            parts = [f"The trend is {trend} and the risk is {risk_word}, but recent news "
+                     "shows a negative event, so it was held at watch instead of buy now."]
+        else:
+            parts = [f"The trend is {trend} and the risk is {risk_word} ({risk:.1f} out of 2), "
+                     "but it isn't a clear buy yet.",
+                     because,
+                     "Jev would wait for a better entry or more confirmation."]
+    elif risk >= 1.5:
+        parts = [f"The trend is {trend}, but buying now looks risky ({risk:.1f} out of 2).",
+                 because or "The setup looks stretched or poorly supported.",
+                 "Stocks in this spot often pull back, so Jev would stay out for now."]
+    elif quality < 0.5:
+        parts = ["The trend is weak or choppy, so there is no clear direction to follow."]
+    else:
+        parts = ["Jev doesn't see a good setup right now."]
+
+    tone = j.get("news_sentiment")
+    already_said = negative_news and verdict == "watch"
+    if tone is not None and not already_said:
+        word = _news_word(tone)
+        catalyst = j.get("news_catalyst")
+        if catalyst in ("positive", "negative"):
+            clash = (catalyst == "negative" and word != "negative") or (catalyst == "positive" and word == "negative")
+            parts.append(f"Recent news is {word} overall, {'but' if clash else 'and'} "
+                         f"a specific {catalyst} event stands out.")
+        else:
+            parts.append(f"Recent news is {word}.")
+    return " ".join(p for p in parts if p)
+
+
 # --------------------------------------------------------------------------- #
 # Screener table as a custom HTML component (keeps the Jev hover overlay).
 # Embeds the exact same static/style.css as the Flask app so the table looks
@@ -653,12 +712,15 @@ def _screener_table_html(results: list[dict], charts: dict | None = None) -> str
             buy = "yes" if j["is_buy_candidate"] else "no"
         final = _fmt_num(r.get("final_score"), 3)
         verdict_note = _verdict_reason(verdict, q_raw, rk_raw) or "overall call: buy now / watch / avoid"
+        why = _why_verdict(r)
+        why_line = f"Why: {why}\n" if why else ""
         if j:
             tip = (
                 f"Quality: {q_disp} — {q_note}\n"
                 f"Risk: {rk_disp} — {rk_note}\n"
                 f"Buy: {buy} — qualifies as a buy candidate? (no if risk is high or trend is weak)\n"
                 f"Verdict: {verdict_label} — {verdict_note}\n"
+                f"{why_line}"
                 f"Final: {final} — overall ranking score (momentum + AI; higher is better)"
             )
             tip_title = "AI Analysis"
@@ -1120,7 +1182,8 @@ def _render_help() -> None:
         sells for you.
 
         **How to read the AI analysis** (select one or more tickers under *AI analysis* below the
-        tables and press **Run AI analysis**; hover its **AI** badge afterwards):
+        tables and press **Run AI analysis**; hover its **AI** badge afterwards — its
+        **Why** line explains the verdict in plain English):
 
         - **Quality (0–2)** — how clear and sustained the uptrend is. **2 = strong**,
           1 = moderate, 0 = weak/choppy. Higher is better.
