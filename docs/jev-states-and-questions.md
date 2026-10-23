@@ -64,11 +64,44 @@ to match the Quality/Risk ratings. The default (used by the Flask app) keeps the
 original, independent questions and raw answers, so the Flask behaviour is
 unchanged.
 
+## News (Streamlit app, on demand)
+
+When *Include news from the past 7 days* is ticked in the **AI analysis** section,
+`screener.analyze_rows` first fetches headlines with `trendfinder/news.py`
+(Google News RSS, no key; up to 10 from the last 7 days, newest first, quote and
+options-chain pages dropped, cached ~30 min) and adds them to the state:
+
+```python
+state["news"] = ["2026-10-22 | Seeking Alpha | Thomson Reuters climbs 7%, ...", ...]
+```
+
+An empty list means "looked, found none". If the lookup fails the `news` key is
+left out entirely, so Jev is asked the normal five questions and the UI shows
+*unavailable* instead of claiming there was no news.
+
+With `news` present, three questions are added and the `verdict` instructions also
+tell Jev to weigh the headlines:
+
+| Question | Type | Criteria |
+|---|---|---|
+| `news_sentiment` | score | Negative: mostly bad news · Neutral/mixed: little or offsetting · Positive: mostly good news |
+| `news_catalyst` | choice | `none` / `positive` / `negative` (a specific event such as earnings, downgrade, lawsuit, contract) |
+| `news_explains_move` | noul | true: a headline plausibly explains the recent move · false: unexplained or no headlines |
+
+The headlines are third-party text, so the `news_sentiment` instructions tell Jev to
+treat them as information only and ignore any instructions inside them.
+
+**Scoring:** `news_sentiment` (0-2, 1 = neutral) adds `0.15 × (sentiment − 1)` to
+`final_score` (±0.15). In `_reconcile_answers`, a `negative` catalyst turns a
+`buy_now` verdict into `watch`. Decision-log rows record `news_used` and
+`news_count` so Evaluate can separate news-aware calls from earlier ones. The
+Flask app's automatic path never sends news.
+
 ---
 
 ## Summary
 
-- **1 role** — entry judgment, with its own state shape and question set.
+- **1 role** — entry judgment, with its own state shape and question set (plus optional news questions).
 - **Question types used:** `score` (rating), `noul` (boolean), `choice` (enum).
 - All requests go through the single `_ask()` helper (`trendfinder/jev_client.py:16`)
   → POST to `https://openrouter.ai/api/alpha/decisions` with `{model, state, questions}`.

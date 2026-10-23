@@ -186,6 +186,24 @@ def _equity_svg(series: dict[str, list[dict]], width: int = 800, height: int = 3
             f'aria-label="Equity curve vs benchmark">{"".join(parts)}</svg></div>')
 
 
+def _md_escape(text: str) -> str:
+    """Escape markdown/LaTeX specials in third-party text (headlines)."""
+    for ch in ("\\", "[", "]", "$", "*", "_", "`"):
+        text = text.replace(ch, "\\" + ch)
+    return text
+
+
+def _news_word(score: float | None) -> str:
+    """Plain-English label for Jev's 0-2 news-tone score (1 = neutral)."""
+    if score is None:
+        return ""
+    if score >= 1.5:
+        return "positive"
+    if score >= 0.5:
+        return "neutral"
+    return "negative"
+
+
 def _fmt_num(v: float | None, digits: int = 2) -> str:
     return "—" if v is None else f"{v:.{digits}f}"
 
@@ -878,6 +896,14 @@ def _render_screener() -> None:
              "(one call per ticker), so you control the AI cost.",
     )
     chosen = [by_ticker[t] for t in selected if t in by_ticker]
+    use_news = st.checkbox(
+        "Include news from the past 7 days",
+        value=True,
+        key="ai_news",
+        help="Sends up to 10 recent headlines (Google News) to Jev along with the price "
+             "indicators, so it can weigh catalysts like earnings or downgrades. "
+             "Adds a little to each call's size.",
+    )
     if not use_jev:
         st.info("Add your OpenRouter API key in the sidebar to run the AI analysis.")
     elif chosen:
@@ -886,7 +912,7 @@ def _render_screener() -> None:
                    + (f" — {redo} already analyzed, will be re-run" if redo else ""))
         if st.button(f"Run AI analysis ({len(chosen)})", key="ai_run"):
             with st.spinner(f"Asking Jev about {', '.join(r['ticker'] for r in chosen)}…"):
-                answers = screener.analyze_rows(chosen, api_key=_session_api_key())
+                answers = screener.analyze_rows(chosen, api_key=_session_api_key(), use_news=use_news)
             done = {t: j for t, j in answers.items() if j}
             if done:
                 screener.apply_analyses(meta, done)
@@ -899,19 +925,43 @@ def _render_screener() -> None:
         st.warning("No answer from Jev for: " + ", ".join(failed) + ". Try again.")
     if chosen:
         table = []
+        any_news = any(
+            "news_sentiment" in (r.get("jev") or {}) or (r.get("jev") or {}).get("news_unavailable")
+            for r in chosen
+        )
         for r in chosen:
             j = r.get("jev") or {}
             q_raw, rk_raw, verdict = j.get("trend_quality"), j.get("risk_at_entry"), j.get("verdict")
-            table.append({
+            row = {
                 "Ticker": r["ticker"],
                 "Quality": f"{_fmt_num(q_raw, 1)} / 2" if j else "—",
                 "Risk": f"{_fmt_num(rk_raw, 1)} / 2" if j else "—",
                 "Buy candidate": ("yes" if j.get("is_buy_candidate") else "no") if j else "—",
                 "Verdict": (verdict or "—").replace("_", " ") if j else "not analyzed",
-                "Final score": _fmt_num(r.get("final_score"), 3),
-                "Why": (_verdict_reason(verdict, q_raw, rk_raw) or "") if j else "",
-            })
+            }
+            if any_news:
+                if j.get("news_unavailable"):
+                    row["News"], row["Catalyst"] = "unavailable", "—"
+                elif j.get("news_sentiment") is not None:
+                    row["News"] = f"{_news_word(j['news_sentiment'])} ({j['news_sentiment']:.1f})"
+                    row["Catalyst"] = j.get("news_catalyst") or "—"
+                else:
+                    row["News"], row["Catalyst"] = "—", "—"
+            row["Final score"] = _fmt_num(r.get("final_score"), 3)
+            row["Why"] = (_verdict_reason(verdict, q_raw, rk_raw) or "") if j else ""
+            table.append(row)
         st.markdown(_html_table(pd.DataFrame(table), numeric=("Final score",)), unsafe_allow_html=True)
+        for r in chosen:
+            headlines = (r.get("jev") or {}).get("headlines")
+            if headlines is None:
+                continue
+            with st.expander(f"{r['ticker']} — {len(headlines)} headline{'s' if len(headlines) != 1 else ''} from the past 7 days"):
+                if not headlines:
+                    st.caption("No headlines found.")
+                for h in headlines:
+                    text = _md_escape(h["title"])
+                    link = f"[{text}]({h['link']})" if h.get("link") else text
+                    st.markdown(f"- {h['date']} · {_md_escape(h['source'])} — {link}")
 
 
 # --------------------------------------------------------------------------- #
@@ -1073,9 +1123,19 @@ def _render_help() -> None:
           ranks first. **Not** a probability or a predicted return. It is the technical
           **momentum** score (roughly −1…+0.9) plus the AI adjustments: **Quality
           +0.15 × value** (up to +0.30), **Risk −0.15 × value** (down to −0.30),
-          **Buy candidate +0.25**, **momentum sustainability +0.20**, and **Verdict**
-          (+0.35 buy now / 0 watch / −0.45 avoid). The theoretical range is
-          **−1.7…+2.0** (the ceiling is +2.0, and +0.9 without Jev).
+          **Buy candidate +0.25**, **momentum sustainability +0.20**, **news tone
+          ±0.15** (only when news was included: 0 for neutral, +0.15 positive, −0.15
+          negative) and **Verdict** (+0.35 buy now / 0 watch / −0.45 avoid). The
+          theoretical range is **−1.8…+2.15** (the ceiling is +2.15, and +0.9
+          without Jev).
+        - **News** — when *Include news from the past 7 days* is ticked, up to 10
+          recent headlines (Google News: date, source, title; no article text) are
+          sent to Jev with the price indicators. It rates their **tone**
+          (negative / neutral / positive) and whether a specific **catalyst** (positive
+          or negative event such as an earnings beat, downgrade or lawsuit) shows up.
+          A clear negative catalyst caps the Verdict at *watch*. The headlines are
+          listed under the table so you can check what Jev saw. If the news lookup
+          fails, Jev is asked without news and the News column says *unavailable*.
 
         Roughly: a strong setup is *Quality 2, Risk 0–1, Buy yes, Verdict buy now*;
         a weak one is *Quality 0–1, Risk 2, Buy no, Verdict avoid*. These are

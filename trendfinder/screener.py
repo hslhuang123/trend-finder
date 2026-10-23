@@ -9,7 +9,7 @@ from datetime import datetime
 
 import pandas as pd
 
-from . import company, config, decisions, discover, jev_client, market_data
+from . import company, config, decisions, discover, jev_client, market_data, news
 
 # Jev's overall verdict shifts the final score the most.
 VERDICT_BONUS = {"buy_now": 0.35, "watch": 0.0, "avoid": -0.45}
@@ -30,8 +30,8 @@ def compute_momentum_score(row: pd.Series) -> float:
     return round(score, 3)
 
 
-def build_state(row: dict) -> dict:
-    return {
+def build_state(row: dict, headlines: list[dict] | None = None) -> dict:
+    state = {
         "ticker": row["ticker"],
         "price": row["price"],
         "change_1d_pct": row["change_1d_pct"],
@@ -42,16 +42,24 @@ def build_state(row: dict) -> dict:
         "volume_ratio": row["volume_ratio"],
         "rsi": row["rsi"],
     }
+    if headlines is not None:  # [] means "looked, found none"; None means not asked
+        state["news"] = news.as_lines(headlines)
+    return state
 
 
 def _extract_entry(answers: dict) -> dict:
-    return {
+    extracted = {
         "trend_quality": (answers.get("trend_quality") or {}).get("score"),
         "risk_at_entry": (answers.get("risk_at_entry") or {}).get("score"),
         "is_buy_candidate": (answers.get("is_buy_candidate") or {}).get("noul"),
         "verdict": (answers.get("verdict") or {}).get("choice"),
         "momentum_sustainability": (answers.get("momentum_sustainability") or {}).get("noul"),
     }
+    if "news_sentiment" in answers:  # only present when headlines were sent
+        extracted["news_sentiment"] = (answers.get("news_sentiment") or {}).get("score")
+        extracted["news_catalyst"] = (answers.get("news_catalyst") or {}).get("choice")
+        extracted["news_explains_move"] = (answers.get("news_explains_move") or {}).get("noul")
+    return extracted
 
 
 def _reconcile_answers(extracted: dict) -> dict:
@@ -75,16 +83,22 @@ def _reconcile_answers(extracted: dict) -> dict:
         extracted["is_buy_candidate"] = True
         if extracted.get("verdict") == "avoid":
             extracted["verdict"] = "watch"
+    # A clear negative catalyst in the news caps the call at 'watch'.
+    if extracted.get("news_catalyst") == "negative" and extracted.get("verdict") == "buy_now":
+        extracted["verdict"] = "watch"
     return extracted
 
 
 def _final_score(momentum: float, jev: dict) -> float:
+    # News tone (0-2, 1 = neutral) moves the score by up to +/-0.15 when it was asked.
+    news_tone = jev.get("news_sentiment")
     return round(
         momentum
         + 0.15 * (jev["trend_quality"] or 0)
         - 0.15 * (jev["risk_at_entry"] or 0)
         + 0.25 * (jev["is_buy_candidate"] or 0)
         + 0.20 * (jev["momentum_sustainability"] or 0)
+        + (0.15 * (news_tone - 1) if news_tone is not None else 0.0)
         + VERDICT_BONUS.get(jev["verdict"], 0.0),
         3,
     )
@@ -94,6 +108,10 @@ def _process_answer(answer: dict, state: dict, ticker: str, momentum: float,
                     reconcile: bool) -> dict:
     """Turn Jev's raw answers into the extracted judgment and log the decision."""
     extracted = _extract_entry(answer)
+    if "news" in state:
+        # Recorded in the decision log so Evaluate can compare news-aware calls.
+        extracted["news_used"] = True
+        extracted["news_count"] = len(state["news"])
     if reconcile:
         extracted = _reconcile_answers(extracted)
     decisions.log_entry(state, answer, extracted, ticker, momentum)
@@ -101,8 +119,13 @@ def _process_answer(answer: dict, state: dict, ticker: str, momentum: float,
 
 
 def analyze_rows(rows: list[dict], api_key: str | None = None, consistent: bool = True,
-                 reconcile: bool = True) -> dict[str, dict | None]:
+                 reconcile: bool = True, use_news: bool = True) -> dict[str, dict | None]:
     """Run Jev on the given screened rows (on demand), concurrently.
+
+    With `use_news`, each ticker's last-7-days headlines are fetched and sent with
+    the price indicators; they come back on the judgment as `headlines` (and
+    `news_unavailable` when the lookup failed, in which case Jev is asked without
+    news rather than told there was none).
 
     Returns {ticker: judgment}; a ticker maps to None when Jev gave no answer, and
     every ticker maps to None when there is no API key (no calls are made).
@@ -110,20 +133,30 @@ def analyze_rows(rows: list[dict], api_key: str | None = None, consistent: bool 
     key = (api_key or config.OPENROUTER_API_KEY or "").strip()
     if not key or not rows:
         return {r["ticker"]: None for r in rows}
-    states = [build_state(r) for r in rows]
+
+    def ask(row: dict):
+        headlines = None
+        if use_news:
+            headlines = news.fetch((row.get("company") or {}).get("name") or "", row["ticker"])
+        state = build_state(row, headlines)
+        return state, headlines, jev_client.assess_trend(state, api_key=key, consistent=consistent)
+
     with ThreadPoolExecutor(max_workers=6) as pool_exec:
-        answers = list(pool_exec.map(
-            lambda state: jev_client.assess_trend(state, api_key=key, consistent=consistent),
-            states,
-        ))
+        asked = list(pool_exec.map(ask, rows))
     # Log sequentially (SQLite) after the concurrent network calls.
-    return {
-        row["ticker"]: (
+    out: dict[str, dict | None] = {}
+    for row, (state, headlines, answer) in zip(rows, asked):
+        jev = (
             _process_answer(answer, state, row["ticker"], float(row["momentum_score"]), reconcile)
             if answer else None
         )
-        for row, state, answer in zip(rows, states, answers)
-    }
+        if jev is not None and use_news:
+            if headlines is None:
+                jev["news_unavailable"] = True
+            else:
+                jev["headlines"] = headlines
+        out[row["ticker"]] = jev
+    return out
 
 
 def apply_analyses(meta: dict, analyses: dict[str, dict]) -> None:

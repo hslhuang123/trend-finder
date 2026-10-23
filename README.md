@@ -32,7 +32,10 @@ A stock **screener + backtester** for US and Canadian markets, with optional
   **verdict** (buy now / watch / avoid), blended into the final score. The
   Flask screener judges the top candidates automatically; the Streamlit app
   never calls Jev automatically (to save tokens and cost) — you pick one or more tickers
-  under **AI analysis** and press **Run AI analysis**.
+  under **AI analysis** and press **Run AI analysis**. By default that also sends
+  the last 7 days of headlines (Google News, no key, up to 10 per ticker) so Jev
+  rates the news tone and any catalyst; untick *Include news* to skip it. The
+  headlines are listed under the results table.
 - **Evaluate** — a report that tests whether Jev's judgments actually beat the
   rule-only momentum ranking. Every Jev call is logged with its baseline, then
   measured against the realized forward return once ~20 trading days pass.
