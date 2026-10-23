@@ -192,8 +192,12 @@ Run it from the CLI as well:
 
 The app has a built-in **Help** tab (`/help`) explaining how to read the Screener
 and Backtest results — including how to tell whether the strategy is winning or
-losing, what the Trades table contains, a metrics glossary, Jev's role, and the
-data caveats.
+losing, what the Trades table contains, a metrics glossary, and the data caveats.
+
+The Streamlit app also has an **AI Guide** page that walks through the two AI steps:
+how Jev's analysis works (what is sent, the questions it answers, how Buy/Verdict
+are reconciled, how the Final score is built, with a worked example) and how
+*Explain with AI* works (what the chat model is given and told, and what it is not).
 
 ## Configuration
 
