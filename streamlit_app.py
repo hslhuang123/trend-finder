@@ -88,6 +88,8 @@ _CAP_TAG_CSS = """
 .cap-large { color: #2f81f7; }
 .cap-mid { color: #a371f7; }
 .cap-small { color: var(--muted, #8b949e); }
+/* The shared mobile CSS hides column 5 (1d %) below 760px; keep it visible next to 5d %. */
+@media (max-width: 760px) { #screen-table th:nth-child(5), #screen-table td:nth-child(5) { display: table-cell !important; } }
 """
 
 
