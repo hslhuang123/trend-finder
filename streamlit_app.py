@@ -608,18 +608,18 @@ def _render_screener() -> None:
         list(discover.EXCHANGES),
         index=list(discover.EXCHANGES).index(discover.DEFAULT_EXCHANGE),
         key="discover_exchange",
-        help="Discovered names come from this exchange (North America only), "
-             "limited to mid-cap companies ($2B–$10B market cap, in the listing's "
-             "own currency).",
+        help="Discovered names come from this exchange (North America only): a mix of "
+             "mid-caps ($2B–$10B market cap) and large-caps (over $10B), in the "
+             "listing's own currency.",
     )
     window = col_window.selectbox(
         "Best performers over",
         list(discover.PERFORMANCE_WINDOWS),
         index=list(discover.PERFORMANCE_WINDOWS).index(discover.DEFAULT_WINDOW),
         key="discover_window",
-        help="Discovery ranks the exchange's names by their return over this period. "
-             "Longer periods look at the exchange's 250 most-traded mid-cap names and "
-             "take a few seconds more.",
+        help="Discovery ranks the exchange's names by their return over this period, "
+             "separately for mid-caps and large-caps. Longer periods look at the "
+             "250 most-traded names in each group and take several seconds more.",
     )
     use_jev = bool(_session_api_key())
     if use_jev:
@@ -710,7 +710,10 @@ def _render_screener() -> None:
         disc_height = min(150 + 42 * len(disc_rows), 720)
         st.iframe(_screener_table_html(disc_rows, charts), height=disc_height)
         n = len(disc_rows)
-        st.caption(f"{n} freshly discovered top performer{'s' if n != 1 else ''}. "
+        n_mid = sum(1 for r in disc_rows if r.get("cap_band") == "mid-cap")
+        n_large = sum(1 for r in disc_rows if r.get("cap_band") == "large-cap")
+        st.caption(f"{n} freshly discovered top performer{'s' if n != 1 else ''} "
+                   f"({n_mid} mid-cap, {n_large} large-cap). "
                    "Shown for this run only, never saved.")
         if n < DISCOVER_COUNT:
             st.info(f"Only {n} candidate{'s' if n != 1 else ''} found on this exchange for this period — "
@@ -868,7 +871,8 @@ def _render_help() -> None:
         **Screener** — enter one or more tickers or company names (separate them with
         commas); it checks those plus at least five **discovered** names (🔍) from the
         **exchange you pick** in the *Discover from exchange* dropdown (TSX by default;
-        also TSXV, NASDAQ, NYSE, NYSE American) and ranks that exchange's mid-caps by their
+        also TSXV, NASDAQ, NYSE, NYSE American) and ranks that exchange's mid-caps ($2B–$10B)
+        and large-caps (over $10B) separately by their
         return over the period in *Best performers over* (1 day, 5 days, 1 month by default,
         or 3 months); it then ranks everything by momentum. AI judgments (**Jev**) are
         not run automatically — analyze one ticker at a time under *AI analysis*.

@@ -148,22 +148,45 @@ def _from_exchange(exchange: str, window_days: int = 1,
     return sorted(returns, key=returns.get, reverse=True)
 
 
-def discover_candidates(limit: int = 8, exclude=None,
-                        min_market_cap: float | None = None,
-                        max_market_cap: float | None = None,
-                        exchange: str | None = None,
-                        window: str = DEFAULT_WINDOW) -> list[str]:
-    """Return up to `limit` mid-cap tickers not in `exclude`.
+def cap_bands() -> dict[str, tuple[float, float]]:
+    """Market-cap bands (min, max; 0 = unbounded) used for exchange discovery.
 
-    With `exchange` (a key of EXCHANGES) candidates are restricted to that
-    exchange, ranked best-first by their return over `window` (a key of
-    PERFORMANCE_WINDOWS), with no cross-exchange fallback. Otherwise they are a
-    random sample from the general market screeners.
+    Mid-cap is the configured band; large-cap is everything above its ceiling.
     """
-    if exchange is not None and exchange not in EXCHANGES:
+    mid_min, mid_max = config.DISCOVER_MIN_MARKET_CAP, config.DISCOVER_MAX_MARKET_CAP
+    return {"mid-cap": (mid_min, mid_max), "large-cap": (mid_max, 0.0)}
+
+
+def discover_by_band(exchange: str, window: str = DEFAULT_WINDOW, exclude=None,
+                     per_band: int = 5) -> dict[str, list[str]]:
+    """Best performers on `exchange` over `window`, ranked best-first per cap band.
+
+    Returns {band: [tickers]} with up to `per_band` names each (bands from
+    `cap_bands`), never repeating a name and skipping `exclude`. There is no
+    cross-exchange fallback; a band the exchange has no names for comes back empty.
+    """
+    if exchange not in EXCHANGES:
         raise ValueError(f"Unknown exchange {exchange!r}; choose from {list(EXCHANGES)}")
     if window not in PERFORMANCE_WINDOWS:
         raise ValueError(f"Unknown window {window!r}; choose from {list(PERFORMANCE_WINDOWS)}")
+
+    taken = {str(t).upper().strip() for t in (exclude or [])}
+    out: dict[str, list[str]] = {}
+    for band, (lo, hi) in cap_bands().items():
+        ranked = _from_exchange(
+            exchange, window_days=PERFORMANCE_WINDOWS[window],
+            min_market_cap=lo, max_market_cap=hi,
+        )
+        out[band] = [s for s in ranked if s not in taken][:per_band]
+        taken.update(out[band])
+    return out
+
+
+def discover_candidates(limit: int = 8, exclude=None,
+                        min_market_cap: float | None = None,
+                        max_market_cap: float | None = None) -> list[str]:
+    """Return up to `limit` random mid-cap tickers not in `exclude`, from the
+    general market screeners (no exchange restriction)."""
     if min_market_cap is None:
         min_market_cap = config.DISCOVER_MIN_MARKET_CAP
     if max_market_cap is None:
@@ -172,16 +195,6 @@ def discover_candidates(limit: int = 8, exclude=None,
     excluded = {str(t).upper().strip() for t in (exclude or [])}
     pool: list[str] = []
     seen = set(excluded)
-
-    if exchange is not None:
-        for symbol in _from_exchange(
-            exchange, window_days=PERFORMANCE_WINDOWS[window],
-            min_market_cap=min_market_cap, max_market_cap=max_market_cap,
-        ):
-            if symbol not in seen:
-                seen.add(symbol)
-                pool.append(symbol)
-        return pool[:limit]
 
     # Always try the return screener first, then shuffle the rest.
     others = [s for s in SCREENERS if s != PRIMARY_SCREENER]

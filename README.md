@@ -14,21 +14,19 @@ A stock **screener + backtester** for US and Canadian markets, with optional
 - **Auto-pick** — automatically selects the best `AUTO_PICK_COUNT` names
   (default **2**) from the watchlist by final score and highlights them with a
   ★.
-- **Surprise discovery** — on every screener run it also pulls a pool of
-  **mid-cap** tickers from return-oriented market screeners and surfaces **two
-  with high recent returns** (5-day), randomly sampled from the top performers
-  so it varies each run, marked with a 🔍. They exist for that run only and are
+- **Surprise discovery** — on every screener run it also surfaces freshly
+  discovered tickers marked with a 🔍. They exist for that run only and are
   **never** written to the watchlist. The Streamlit app adds a **Discover from
   exchange** dropdown (TSX by default; also TSXV, NASDAQ, NYSE, NYSE American —
-  North America only); a **Best performers over** dropdown (1 day, 5 days,
-  1 month by default, 3 months) sets the period used to rank that exchange's
-  names. Periods longer than a day rank the exchange's 250 most-traded names in
-  the band. The market-cap band applies in that listing's own currency. The
-  ticker box can be left empty to run discovery alone. The Streamlit app
-  surfaces at least five discovered names (fewer only if the exchange has too
-  few in the band): Jev "buy now" names first, then topped up with the
-  next-best by return; without Jev they are simply the top performers, not
-  AI-vetted.
+  North America only) and a **Best performers over** dropdown (1 day, 5 days,
+  1 month by default, 3 months). It surfaces at least five names, a mix of
+  **mid-caps** ($2B–$10B, three) and **large-caps** (over $10B, two), each
+  group ranked best-first by return over the chosen period (a group that is
+  short is topped up from the other; fewer only if the exchange has too few
+  names). Periods longer than a day rank each group's 250 most-traded names.
+  Market-cap bands apply in the listing's own currency. The ticker box can be
+  left empty to run discovery alone. Without an exchange (Flask app) it uses
+  the general return screeners for two mid-cap names.
 - **Jev's entry judgment** — judges each top candidate's **trend quality**,
   **entry risk**, **momentum sustainability**, **buy candidacy**, and an overall
   **verdict** (buy now / watch / avoid), blended into the final score. The

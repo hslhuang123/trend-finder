@@ -152,15 +152,22 @@ def screen(use_jev: bool = True, top_n: int = 25, jev_top: int = 25,
 
     # Discover a pool of 'surprise' candidates (never persisted).
     pool: list[str] = []
+    bands: dict[str, list[str]] = {}
     if discover_count > 0:
         try:
-            pool = discover.discover_candidates(
-                limit=max(discover_count * 5, 12), exclude=watchlist,
-                exchange=discover_exchange, window=discover_window,
-            )
+            if discover_exchange:
+                bands = discover.discover_by_band(
+                    discover_exchange, discover_window, exclude=watchlist,
+                    per_band=discover_count,
+                )
+                pool = [t for ts in bands.values() for t in ts]
+            else:
+                pool = discover.discover_candidates(
+                    limit=max(discover_count * 5, 12), exclude=watchlist,
+                )
         except Exception as exc:  # noqa: BLE001
             print(f"[discover] failed: {exc}")
-            pool = []
+            pool, bands = [], {}
 
     tickers = watchlist + [t for t in pool if t not in watchlist]
     df = market_data.fetch_trend_data(tickers)
@@ -212,15 +219,27 @@ def screen(use_jev: bool = True, top_n: int = 25, jev_top: int = 25,
     results.sort(key=lambda x: x["final_score"], reverse=True)
 
     # Surface the discovered candidates with the HIGHEST RETURNS. With an
-    # explicit exchange they are discover_candidates' ranking (best first over the
-    # chosen window); otherwise pick randomly from the top few so the surprises
-    # vary between runs.
+    # explicit exchange, take them best-first from each market-cap band (half
+    # large-cap, rounded down, the rest mid-cap), topping up from the other band
+    # if one is short. Otherwise pick randomly from the top few by 5-day return so
+    # the surprises vary between runs.
     pool_set = set(pool)
     pool_results = [r for r in results if r["ticker"] in pool_set]
     if discover_exchange:
-        rank = {t: i for i, t in enumerate(pool)}
-        pool_results.sort(key=lambda r: rank[r["ticker"]])
-        chosen = pool_results[:discover_count]
+        pos = {t: i for ts in bands.values() for i, t in enumerate(ts)}
+        band_rows = {
+            band: sorted((r for r in pool_results if r["ticker"] in set(ts)),
+                         key=lambda r: pos[r["ticker"]])
+            for band, ts in bands.items()
+        }
+        large = discover_count // 2
+        quota = {"large-cap": large, "mid-cap": discover_count - large}
+        chosen = [r for band, rows in band_rows.items() for r in rows[: quota.get(band, 0)]]
+        if len(chosen) < discover_count:
+            taken = {r["ticker"] for r in chosen}
+            rest = sorted((r for rows in band_rows.values() for r in rows
+                           if r["ticker"] not in taken), key=lambda r: pos[r["ticker"]])
+            chosen += rest[: discover_count - len(chosen)]
     else:
         pool_results.sort(key=lambda r: r["change_5d_pct"], reverse=True)
         top_returns = pool_results[: max(discover_count * 3, 6)]
@@ -229,8 +248,10 @@ def screen(use_jev: bool = True, top_n: int = 25, jev_top: int = 25,
     discovered = [r["ticker"] for r in chosen]
     disc_set = set(discovered)
     results = [r for r in results if r["ticker"] not in pool_set or r["ticker"] in disc_set]
+    band_of = {t: band for band, ts in bands.items() for t in ts}
     for item in results:
         item["discovered"] = item["ticker"] in disc_set
+        item["cap_band"] = band_of.get(item["ticker"])
 
     # Auto-pick the best names from the watchlist (never the surprise ones).
     watch_results = [r for r in results if not r["discovered"]]
