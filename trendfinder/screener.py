@@ -180,6 +180,7 @@ def screen(use_jev: bool = True, top_n: int = 25, jev_top: int = 25,
            watchlist: list[str] | None = None,
            discover_exchange: str | None = None,
            discover_window: str = discover.DEFAULT_WINDOW,
+           discover_skip_extended: bool = True,
            api_key: str | None = None,
            consistent_questions: bool = False,
            reconcile_answers: bool = False) -> dict:
@@ -205,7 +206,7 @@ def screen(use_jev: bool = True, top_n: int = 25, jev_top: int = 25,
             if discover_exchange:
                 bands = discover.discover_by_band(
                     discover_exchange, discover_window, exclude=watchlist,
-                    per_band=discover_count,
+                    per_band=discover_count, skip_extended=discover_skip_extended,
                 )
                 pool = [t for ts in bands.values() for t in ts]
             else:

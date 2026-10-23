@@ -787,6 +787,15 @@ def _render_screener() -> None:
              "separately for mid-caps and large-caps. Longer periods look at the "
              "250 most-traded names in each group and take several seconds more.",
     )
+    skip_extended = st.checkbox(
+        "Skip overextended stocks",
+        value=True,
+        key="discover_skip_extended",
+        help=f"Drops discovered names that have already run too far: RSI above "
+             f"{discover.MAX_RSI:.0f}, more than {discover.MAX_ABOVE_MA20_PCT:.0f}% above "
+             "the 20-day average, or below the 20- or 50-day average. Jev usually rates "
+             "those as high entry risk. Untick to see the raw top performers.",
+    )
     use_jev = bool(_session_api_key())
     if use_jev:
         st.caption("AI analysis is on demand — after screening, pick one or more tickers under *AI analysis* to run Jev on them.")
@@ -825,6 +834,7 @@ def _render_screener() -> None:
                     use_jev=False, watchlist=tickers, discover_count=DISCOVER_COUNT,
                     top_n=50,  # keep every discovered candidate
                     discover_exchange=exchange, discover_window=window,
+                    discover_skip_extended=skip_extended,
                 )
             # Precompute price history so the hover chart popup works (no API in the
             # iframe). Stored in session_state so it's not refetched on every rerun.
@@ -1083,7 +1093,10 @@ def _render_help() -> None:
         also TSXV, NASDAQ, NYSE, NYSE American) and ranks that exchange's mid-caps ($2B–$10B)
         and large-caps (over $10B) separately by their
         return over the period in *Best performers over* (1 day, 5 days, 1 month by default,
-        or 3 months); it then ranks everything by momentum. AI judgments (**Jev**) are
+        or 3 months). With *Skip overextended stocks* ticked (the default) it first drops
+        names that have already run too far (RSI above 65, over 8% above the 20-day
+        average, or below the 20/50-day averages), since Jev rates those as high
+        entry risk. It then ranks everything by momentum. AI judgments (**Jev**) are
         not run automatically — pick the tickers to analyze under *AI analysis*.
         Discovered names aren't saved.
 

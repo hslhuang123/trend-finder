@@ -88,6 +88,31 @@ DEFAULT_WINDOW = "1 month"
 # take the most-traded names in the band and rank them by their own price history.
 _UNIVERSE_SIZE = 250  # Yahoo's per-request maximum
 
+# "Overextended" filter: of each band's best performers, keep only names still in
+# an orderly uptrend. Jev rates names far above their averages as high entry risk,
+# so without this nearly every discovered name came back "avoid".
+MAX_RSI = 65.0              # not overbought
+MAX_ABOVE_MA20_PCT = 8.0    # at most this far above the 20-day average
+_FILTER_DEPTH = 40          # top-ranked names per band examined for the filter
+
+
+def _drop_extended(symbols: list[str]) -> list[str]:
+    """Keep the symbols that are still above their 20- and 50-day averages (an
+    intact uptrend) but not overbought: RSI <= MAX_RSI and no more than
+    MAX_ABOVE_MA20_PCT above the 20-day average. Rank order is preserved."""
+    if not symbols:
+        return []
+    from .market_data import fetch_trend_data  # local import: market_data is heavy
+
+    df = fetch_trend_data(symbols)
+    ok = df[
+        (df["rsi"] <= MAX_RSI)
+        & (df["above_ma20_pct"] > 0) & (df["above_ma20_pct"] <= MAX_ABOVE_MA20_PCT)
+        & (df["above_ma50_pct"] > 0)
+    ]
+    keep = set(ok["ticker"])
+    return [s for s in symbols if s in keep]
+
 
 def _window_returns(symbols: list[str], window_days: int) -> dict[str, float]:
     """Total return over the last `window_days` trading days, per symbol."""
@@ -158,12 +183,14 @@ def cap_bands() -> dict[str, tuple[float, float]]:
 
 
 def discover_by_band(exchange: str, window: str = DEFAULT_WINDOW, exclude=None,
-                     per_band: int = 5) -> dict[str, list[str]]:
+                     per_band: int = 5, skip_extended: bool = True) -> dict[str, list[str]]:
     """Best performers on `exchange` over `window`, ranked best-first per cap band.
 
     Returns {band: [tickers]} with up to `per_band` names each (bands from
-    `cap_bands`), never repeating a name and skipping `exclude`. There is no
-    cross-exchange fallback; a band the exchange has no names for comes back empty.
+    `cap_bands`), never repeating a name and skipping `exclude`. With
+    `skip_extended`, names that have already run too far are dropped first (see
+    `_drop_extended`). There is no cross-exchange fallback; a band the exchange
+    has no (remaining) names for comes back empty.
     """
     if exchange not in EXCHANGES:
         raise ValueError(f"Unknown exchange {exchange!r}; choose from {list(EXCHANGES)}")
@@ -173,11 +200,15 @@ def discover_by_band(exchange: str, window: str = DEFAULT_WINDOW, exclude=None,
     taken = {str(t).upper().strip() for t in (exclude or [])}
     out: dict[str, list[str]] = {}
     for band, (lo, hi) in cap_bands().items():
-        ranked = _from_exchange(
-            exchange, window_days=PERFORMANCE_WINDOWS[window],
-            min_market_cap=lo, max_market_cap=hi,
-        )
-        out[band] = [s for s in ranked if s not in taken][:per_band]
+        ranked = [
+            s for s in _from_exchange(
+                exchange, window_days=PERFORMANCE_WINDOWS[window],
+                min_market_cap=lo, max_market_cap=hi,
+            ) if s not in taken
+        ]
+        if skip_extended:
+            ranked = _drop_extended(ranked[:_FILTER_DEPTH])
+        out[band] = ranked[:per_band]
         taken.update(out[band])
     return out
 

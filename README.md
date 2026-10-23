@@ -24,7 +24,10 @@ A stock **screener + backtester** for US and Canadian markets, with optional
   group ranked best-first by return over the chosen period (a group that is
   short is topped up from the other; fewer only if the exchange has too few
   names). Periods longer than a day rank each group's 250 most-traded names.
-  Market-cap bands apply in the listing's own currency. The ticker box can be
+  Market-cap bands apply in the listing's own currency. By default (*Skip
+  overextended stocks*) names with RSI above 65, more than 8% above their 20-day
+  average, or below their 20/50-day averages are dropped before picking, because
+  Jev rates those as high entry risk. The ticker box can be
   left empty to run discovery alone. Without an exchange (Flask app) it uses
   the general return screeners for two mid-cap names.
 - **Jev's entry judgment** — judges each top candidate's **trend quality**,
