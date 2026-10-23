@@ -167,6 +167,7 @@ def apply_analyses(meta: dict, analyses: dict[str, dict]) -> None:
         if jev:
             item["jev"] = jev
             item["final_score"] = _final_score(item["momentum_score"], jev)
+            item.pop("explanation", None)  # a stale explanation no longer matches
     results.sort(key=lambda x: x["final_score"], reverse=True)
     watch_results = [r for r in results if not r["discovered"]]
     picks = [r["ticker"] for r in watch_results[: max(0, min(config.AUTO_PICK_COUNT, len(watch_results)))]]

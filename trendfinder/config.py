@@ -19,6 +19,9 @@ WATCHLIST_PATH = DATA_DIR / "watchlist.json"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 JEV_MODEL = os.getenv("JEV_MODEL", "~typesafe/jev-latest")
+# Chat model that writes the plain-English "Why" for an analyzed ticker (Jev itself
+# returns only scores and choices, never text). Billed to the same OpenRouter key.
+EXPLAIN_MODEL = os.getenv("EXPLAIN_MODEL", "deepseek/deepseek-v4-flash")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip()
 INITIAL_CASH = float(os.getenv("INITIAL_CASH", "100000"))
 AUTO_PICK_COUNT = int(os.getenv("AUTO_PICK_COUNT", "2"))

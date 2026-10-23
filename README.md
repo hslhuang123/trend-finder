@@ -38,7 +38,11 @@ A stock **screener + backtester** for US and Canadian markets, with optional
   under **AI analysis** and press **Run AI analysis**. By default that also sends
   the last 7 days of headlines (Google News, no key, up to 10 per ticker) so Jev
   rates the news tone and any catalyst; untick *Include news* to skip it. The
-  headlines are listed under the results table.
+  headlines are listed under the results table. The AI badge popup has a
+  plain-English **Why** line (built in, free); **Explain with AI** replaces it with
+  a short explanation from a small chat model (`EXPLAIN_MODEL`, ~$0.0001 per
+  ticker). Jev only returns scores, so that text explains Jev's answer rather than
+  being Jev's own reasoning.
 - **Evaluate** — a report that tests whether Jev's judgments actually beat the
   rule-only momentum ranking. Every Jev call is logged with its baseline, then
   measured against the realized forward return once ~20 trading days pass.
@@ -193,6 +197,7 @@ data caveats.
 | --- | --- | --- |
 | `OPENROUTER_API_KEY` | — | Enables the Jev layer |
 | `JEV_MODEL` | `~typesafe/jev-latest` | Jev model id (pin e.g. `typesafe/jev-1.13`) |
+| `EXPLAIN_MODEL` | `deepseek/deepseek-v4-flash` | Chat model behind **Explain with AI** (OpenRouter id) |
 | `AUTO_PICK_COUNT` | `2` | How many top names the screener auto-picks |
 | `DISCOVER_COUNT` | `2` | How many surprise tickers to discover each run (0 disables) |
 | `DISCOVER_MIN_MARKET_CAP` | `2000000000` | Mid-cap floor ($2B) |

@@ -29,6 +29,7 @@ from trendfinder import (
     config,
     decisions,
     discover,
+    explain,
     market_data,
     screener,
 )
@@ -712,8 +713,8 @@ def _screener_table_html(results: list[dict], charts: dict | None = None) -> str
             buy = "yes" if j["is_buy_candidate"] else "no"
         final = _fmt_num(r.get("final_score"), 3)
         verdict_note = _verdict_reason(verdict, q_raw, rk_raw) or "overall call: buy now / watch / avoid"
-        why = _why_verdict(r)
-        why_line = f"Why: {why}\n" if why else ""
+        why = r.get("explanation") or _why_verdict(r)
+        why_line = f"Why{' (AI)' if r.get('explanation') else ''}: {why}\n" if why else ""
         if j:
             tip = (
                 f"Quality: {q_disp} — {q_note}\n"
@@ -1028,6 +1029,28 @@ def _render_screener() -> None:
             row["Why"] = (_verdict_reason(verdict, q_raw, rk_raw) or "") if j else ""
             table.append(row)
         st.markdown(_html_table(pd.DataFrame(table), numeric=("Final score",)), unsafe_allow_html=True)
+        analyzed = [r for r in chosen if (r.get("jev") or {}).get("verdict")]
+        if use_jev and analyzed:
+            if st.button(f"Explain with AI ({len(analyzed)})", key="ai_explain",
+                         help=f"A chat model ({config.EXPLAIN_MODEL}) writes a short plain-English "
+                              "reason for each analyzed ticker's verdict from Jev's answers. "
+                              "One small call per ticker (about $0.0001 each)."):
+                with st.spinner("Writing explanations…"):
+                    texts = explain.explain_rows(analyzed, api_key=_session_api_key())
+                for r in analyzed:
+                    if texts.get(r["ticker"]):
+                        r["explanation"] = texts[r["ticker"]]
+                st.session_state["explain_failed"] = [t for t, x in texts.items() if not x]
+                st.rerun()
+        failed_explain = st.session_state.pop("explain_failed", None)
+        if failed_explain:
+            st.warning("Couldn't write an explanation for: " + ", ".join(failed_explain) + ". Try again.")
+        explained = [r for r in chosen if r.get("explanation")]
+        for r in explained:
+            st.markdown(f"**{r['ticker']}** — {_md_escape(r['explanation'])}")
+        if explained:
+            st.caption(f"Written by {config.EXPLAIN_MODEL} from Jev's answers and the stock's numbers — "
+                       "not Jev's own reasoning. It also shows in the AI badge popup.")
         for r in chosen:
             headlines = (r.get("jev") or {}).get("headlines")
             if headlines is None:
@@ -1183,7 +1206,9 @@ def _render_help() -> None:
 
         **How to read the AI analysis** (select one or more tickers under *AI analysis* below the
         tables and press **Run AI analysis**; hover its **AI** badge afterwards — its
-        **Why** line explains the verdict in plain English):
+        **Why** line explains the verdict in plain English. Press **Explain with AI** to
+        have a small chat model (DeepSeek V4 Flash, about $0.0001 per ticker) write that
+        explanation instead; it explains Jev's answer, since Jev itself returns only scores):
 
         - **Quality (0–2)** — how clear and sustained the uptrend is. **2 = strong**,
           1 = moderate, 0 = weak/choppy. Higher is better.
